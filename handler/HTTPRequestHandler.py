@@ -9,6 +9,7 @@ import shutil
 from lib.http.HTTPMessage import HTTPMessage
 import base64
 import lib
+import pathlib
 
 
 class HTTPRequestHandler:
@@ -203,10 +204,7 @@ class HTTPRequestHandler:
             return None
         list.sort(key=lambda a: a.lower())
         r = []
-        try:
-            displaypath = urllib.parse.unquote(self.path, errors="surrogatepass")
-        except UnicodeDecodeError:
-            displaypath = urllib.parse.unquote(path)
+        displaypath = urllib.parse.unquote(self.path, errors="surrogatepass")
         displaypath = html.escape(displaypath, quote=False)
         enc = sys.getfilesystemencoding()
         title = "Directory listing for %s" % displaypath
@@ -218,6 +216,17 @@ class HTTPRequestHandler:
         r.append("<title>%s</title>\n</head>" % title)
         r.append("<body>\n<h1>%s</h1>" % title)
         r.append("<hr>\n<ul>")
+
+        # add user root directory
+        r.append(
+            '<li><a href="%s">%s</a></li>'
+            % (os.path.join("/", self.user, ""), "/")
+        )
+        # add previous directory
+        r.append(
+            '<li><a href="%s">%s</a></li>'
+            % (os.path.join(str(pathlib.Path(self.path).parent), ""), "/..")
+        )
         for name in list:
             fullname = os.path.join(path, name)
             displayname = linkname = name
@@ -230,10 +239,7 @@ class HTTPRequestHandler:
                 # Note: a link to a directory displays with @ and links with /
             r.append(
                 '<li><a href="%s">%s</a></li>'
-                % (
-                    urllib.parse.quote(linkname, errors="surrogatepass"),
-                    html.escape(displayname, quote=False),
-                )
+                % (urllib.parse.quote(linkname), html.escape(displayname, quote=False))
             )
         r.append("</ul>\n<hr>\n</body>\n</html>\n")
         encoded = "\n".join(r).encode(enc, "surrogateescape")

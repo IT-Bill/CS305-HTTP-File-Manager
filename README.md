@@ -4,12 +4,12 @@
 
 ### Basic HTTP Server
 - [x] Persistent connection
-- [ ] Support many clients simultaneously
+- [x] Support many clients simultaneously
 - [x] Authorization
 
 ### View and Download
 - [x] Directory viewer
-- [ ] Click to download
+- [x] Click to download
 
 ### Upload and Delete
 - [ ] Upload
