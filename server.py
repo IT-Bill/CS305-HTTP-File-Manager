@@ -4,7 +4,6 @@ import threading
 import time
 from TCPServer import TCPServer
 from handler.HTTPRequestHandler import HTTPRequestHandler
-from handler.AuthHandler import AuthHandler
 
     
 
