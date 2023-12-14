@@ -7,6 +7,8 @@ import sys
 import traceback
 import shutil
 from lib.http.HTTPMessage import HTTPMessage
+import base64
+import lib
 
 
 class HTTPRequestHandler:
@@ -37,6 +39,18 @@ class HTTPRequestHandler:
         self.rfile = self.request.makefile("rb", -1)
         self.wfile = _SocketWriter(self.request)
 
+    def is_authorized(self):
+        """ Varify the authorization """
+        
+        # TODO: elegent
+        if self.headers['authorization'] != "":
+            key = self.headers['authorization'].split(maxsplit=1)[1]
+            if key in lib.keys:
+                user = base64.b64decode(key).decode('utf-8').split(":", maxsplit=1)[0]
+                # self.directory = os.path.join(os.getcwd(), "data", user)
+                return True
+        return False 
+
 
     def handle(self):
         """ Handle the http request """
@@ -56,7 +70,7 @@ class HTTPRequestHandler:
         if self.path.startswith("//"):
             self.path = '/' + self.path.lstrip('/')
         
-        #!!!!
+        # parse header
         self.headers = HTTPMessage.parse_headers(self.rfile)
 
         # invoke the corresponding method
@@ -67,12 +81,18 @@ class HTTPRequestHandler:
     
     def do_GET(self):
         """ Serve a GET request """
-        f = self.send_head()
-        if f:
-            try:
-                shutil.copyfileobj(f, self.wfile)
-            finally:
-                f.close()
+        if not self.is_authorized():
+            self.send_response(HTTPStatus.UNAUTHORIZED)
+            self.send_header("WWW-Authenticate", 'Basic realm=\"Test\"')
+            self.send_header('Content-type', 'text\html')
+            self.end_headers()
+        else:
+            f = self.send_head()
+            if f:
+                try:
+                    shutil.copyfileobj(f, self.wfile)
+                finally:
+                    f.close()
                 
     
     def do_POST(self):
@@ -158,8 +178,7 @@ class HTTPRequestHandler:
         displaypath = html.escape(displaypath, quote=False)
         enc = sys.getfilesystemencoding()
         title = 'Directory listing for %s' % displaypath
-        r.append('<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" '
-                 '"http://www.w3.org/TR/html4/strict.dtd">')
+        r.append('<!DOCTYPE>')
         r.append('<html>\n<head>')
         r.append('<meta http-equiv="Content-Type" '
                  'content="text/html; charset=%s">' % enc)

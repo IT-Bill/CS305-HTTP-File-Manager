@@ -3,12 +3,12 @@
 ## TODO List
 
 ### Basic HTTP Server
-- [ ] Persistent connection
+- [x] Persistent connection
 - [ ] Support many clients simultaneously
-- [ ] Authorization
+- [x] Authorization
 
 ### View and Download
-- [ ] Directory viewer
+- [x] Directory viewer
 - [ ] Click to download
 
 ### Upload and Delete

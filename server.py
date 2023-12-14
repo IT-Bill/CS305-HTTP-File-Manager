@@ -10,7 +10,7 @@ from handler.AuthHandler import AuthHandler
 
 if __name__ == "__main__":
     try:
-        http_server = TCPServer(("", 8000), AuthHandler)
+        http_server = TCPServer(("", 8000), HTTPRequestHandler)
         http_thread = threading.Thread(target=http_server.serve_forever)
         http_thread.daemon = True 
         http_thread.start()
