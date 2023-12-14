@@ -1,16 +1,24 @@
 import argparse
-import mimetypes
-import socket
 import asyncio
+import threading
+import time
+from TCPServer import TCPServer
+from handler.HTTPRequestHandler import HTTPRequestHandler
+from handler.AuthHandler import AuthHandler
 
-
-def http_server():
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Allow socket to reuse address
-    server_socket.bind(('localhost', 8080))
-    server_socket.listen(1)
     
 
 if __name__ == "__main__":
-    http_server()
+    try:
+        http_server = TCPServer(("", 8000), AuthHandler)
+        http_thread = threading.Thread(target=http_server.serve_forever)
+        http_thread.daemon = True 
+        http_thread.start()
+
+        while True:
+            time.sleep(1)
+    
+    except KeyboardInterrupt:
+        http_server.shutdown()
+        print("Server close.")
         

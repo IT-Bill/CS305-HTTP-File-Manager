@@ -1,6 +1,7 @@
 import socket
 import selectors
 import threading
+import traceback
 
 if hasattr(selectors, 'PollSelector'):
     _ServerSelector = selectors.PollSelector
@@ -8,8 +9,6 @@ else:
     _ServerSelector = selectors.SelectSelector
 
 class TCPServer:
-    address_family = socket.AF_INET
-    socket_type = socket.SOCK_STREAM
 
     request_queue_size = 5
 
@@ -18,8 +17,9 @@ class TCPServer:
         self.RequestHandlerClass = RequestHandlerClass
         self.__is_shut_down = threading.Event()
         self.__shutdown_request = False
-        self.socket = socket.socket(self.address_family, self.socket_type)
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
+            # allow_reuse_address
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.socket.bind(self.server_address)
             self.server_address = self.socket.getsockname()
@@ -31,7 +31,7 @@ class TCPServer:
         self.__is_shut_down.clear()
         try:
             with _ServerSelector() as selector:
-                selector.register(self, selector.EVENT_READ)
+                selector.register(self.socket, selectors.EVENT_READ)
 
                 while not self.__shutdown_request:
                     ready = selector.select(poll_interval)
@@ -52,8 +52,15 @@ class TCPServer:
                 self.RequestHandlerClass(request, client_address, self)
             except Exception:
                 # TODO
-                request.close()
+                if request:
+                    request.close()
         
         except:
-            request.close()
+            if request:
+                request.close()
     
+    def shutdown(self):
+        """ Stop the serve_forever loop """
+        self.__shutdown_request = True 
+        self.__is_shut_down.wait()
+
