@@ -1,16 +1,11 @@
-from io import BufferedIOBase
-import urllib, os, posixpath, io
-from lib.http import HTTPStatus
-import mimetypes
-from lib import html, utils
-import sys
-import traceback
-import shutil
-from lib.http.HTTPMessage import HTTPMessage
-import base64
+from lib.http import HTTPStatus, HTTPMessage
+from lib import utils
 import lib
-import pathlib
-import uuid
+
+import urllib, pathlib, posixpath, mimetypes
+import os, io, sys, shutil
+import base64, uuid
+import traceback
 
 
 class HTTPRequestHandler:
@@ -41,7 +36,6 @@ class HTTPRequestHandler:
     def is_unauthorized(self):
         """
         Varify the authorization.
-        Notice it is `unauthorized`.
         """
 
         # TODO: elegent
@@ -64,6 +58,7 @@ class HTTPRequestHandler:
     def is_forbidden(self):
         """
         Check whether the path is forbidden.
+
         Redirect if user visites the root.
         """
         if self.command == "GET":
@@ -312,7 +307,7 @@ class HTTPRequestHandler:
             
         elif mode == "0":
             r = []
-            displaypath = html.escape(self.simple_path, quote=False)
+            displaypath = utils.html_escape(self.simple_path, quote=False)
             title = "Directory listing for %s" % displaypath
             r.append("<!DOCTYPE>")
             r.append("<html>\n<head>")
@@ -345,7 +340,7 @@ class HTTPRequestHandler:
                 
                 r.append(
                     '<li><a href="%s">%s</a></li>'
-                    % (linkname, html.escape(displayname, quote=False))
+                    % (linkname, utils.html_escape(displayname, quote=False))
                 )
 
             r.append("</ul>\n<hr>\n</body>\n</html>\n")
@@ -414,7 +409,7 @@ class HTTPRequestHandler:
         """ """
         pass
 
-class _SocketWriter(BufferedIOBase):
+class _SocketWriter(io.BufferedIOBase):
     """Simple writable BufferedIOBase implementation for a socket
 
     Does not hold data in a buffer, avoiding any need to call flush()."""

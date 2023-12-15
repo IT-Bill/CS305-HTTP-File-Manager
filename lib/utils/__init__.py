@@ -1,5 +1,13 @@
 import time, datetime, urllib, re
 
+__all__ = [
+    'formatdate', 
+    'parse_url',
+    'get_filename_from_content_disposition',
+    'join_path_query',
+    'html_escape'
+]
+
 def formatdate(timeval=None, localtime=False, usegmt=False):
     """Returns a date string as specified by RFC 2822, e.g.:
     
@@ -46,7 +54,6 @@ def formatdate(timeval=None, localtime=False, usegmt=False):
 
     return date_str
 
-
 def parse_url(url):
     """  
     parse url to plain path and query dictionary
@@ -55,7 +62,6 @@ def parse_url(url):
     path = parts.path
     query = urllib.parse.parse_qs(parts.query)
     return path, query
-
 
 def get_filename_from_content_disposition(content_disposition):
     """
@@ -88,3 +94,18 @@ def join_path_query(path, query_params):
     
     # 构造完整的URL
     return urllib.parse.urlunsplit(('', '', path, query_string, ''))
+
+def html_escape(s, quote=True):
+    """
+    Replace special characters "&", "<" and ">" to HTML-safe sequences.
+    If the optional flag quote is true (the default), the quotation mark
+    characters, both double quote (") and single quote (') characters are also
+    translated.
+    """
+    s = s.replace("&", "&amp;") # Must be done first!
+    s = s.replace("<", "&lt;")
+    s = s.replace(">", "&gt;")
+    if quote:
+        s = s.replace('"', "&quot;")
+        s = s.replace('\'', "&#x27;")
+    return s

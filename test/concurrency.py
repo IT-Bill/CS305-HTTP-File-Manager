@@ -1,6 +1,7 @@
+import lib
+
 import requests
 import threading
-from lib import keys
 import random
 
 
@@ -19,7 +20,7 @@ num_requests = 100
 threads = []
 for i in range(num_requests):
     headers = {
-        "Authorization": "Basic " + random.choice(keys + [":"]),
+        "Authorization": "Basic " + random.choice(lib.keys + [":"]),
         "Connection": "keep-alive"
     }
     thread = threading.Thread(target=test_request, args=(headers, ))
