@@ -46,10 +46,12 @@ class TCPServer:
     def _handle_request(self):
         try:
             request, client_address = self.socket.accept()
-            
+            print(client_address)
             try:
-                # call the RequestHandlerClass
-                self.RequestHandlerClass(request, client_address, self)
+                # call the RequestHandlerClass use different threads
+                handler = threading.Thread(target=self.RequestHandlerClass, args=(request, client_address, self))
+                handler.daemon = True
+                handler.start()
             except Exception:
                 # TODO
                 if request:
@@ -63,4 +65,3 @@ class TCPServer:
         """ Stop the serve_forever loop """
         self.__shutdown_request = True 
         self.__is_shut_down.wait()
-

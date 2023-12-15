@@ -90,6 +90,7 @@ class HTTPRequestHandler:
 
         self.handle_one_request()
         while not self.close_connection:
+            print(self.client_address, "keep-alive")
             self.handle_one_request()
 
     def handle_one_request(self):
@@ -225,7 +226,7 @@ class HTTPRequestHandler:
         # add previous directory
         r.append(
             '<li><a href="%s">%s</a></li>'
-            % (os.path.join(str(pathlib.Path(self.path).parent), ""), "/..")
+            % (os.path.join(str(pathlib.Path(self.path).parent), ""), "../")
         )
         for name in list:
             fullname = os.path.join(path, name)
@@ -304,7 +305,7 @@ class HTTPRequestHandler:
 
     def finish(self):
         """ """
-        pass
+        print(self.client_address, "finish")
 
 
 class _SocketWriter(BufferedIOBase):
