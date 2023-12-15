@@ -90,7 +90,6 @@ class HTTPRequestHandler:
 
         self.handle_one_request()
         while not self.close_connection:
-            print(self.client_address, "keep-alive")
             self.handle_one_request()
 
     def handle_one_request(self):
@@ -102,6 +101,10 @@ class HTTPRequestHandler:
         self.command, self.path, _ = start_line.split()
         if self.path.startswith("//"):
             self.path = "/" + self.path.lstrip("/")
+        if self.path.endswith("//"):
+            self.path = "/" + self.path.rstrip("/")
+        
+        self.simple_path, self.query = utils.parse_url(self.path)
 
         # parse header
         self.headers = HTTPMessage.parse_headers(self.rfile)
@@ -111,6 +114,8 @@ class HTTPRequestHandler:
         method()
         # actually send the response
         self.wfile.flush()
+    
+
 
     def do_GET(self):
         """Serve a GET request"""
@@ -184,6 +189,17 @@ class HTTPRequestHandler:
         except:
             f.close()
             raise
+    
+    def check_query(self):
+        print(self.query)
+        if len(self.query) == 1 and \
+            self.query.get("SUSTech-HTTP") != None and \
+            len(self.query["SUSTech-HTTP"]) == 1 and \
+            self.query["SUSTech-HTTP"][0] in ("0", "1"):
+            return True
+        
+        self.send_error(HTTPStatus.BAD_REQUEST)
+        return False
 
     def send_error(self, code):
         self.send_response(code, HTTPStatus(code).phrase)
@@ -201,49 +217,71 @@ class HTTPRequestHandler:
         try:
             list = os.listdir(path)
         except OSError:
-            self.send_error(HTTPStatus.NOT_FOUND, "No permission to list directory")
+            self.send_error(HTTPStatus.NOT_FOUND)
             return None
+        
+        # Determine the mode by `SUSTech-HTTP` query
+        if not self.check_query():
+            return None
+        
+        mode = self.query["SUSTech-HTTP"][0]
         list.sort(key=lambda a: a.lower())
-        r = []
-        displaypath = urllib.parse.unquote(self.path, errors="surrogatepass")
-        displaypath = html.escape(displaypath, quote=False)
         enc = sys.getfilesystemencoding()
-        title = "Directory listing for %s" % displaypath
-        r.append("<!DOCTYPE>")
-        r.append("<html>\n<head>")
-        r.append(
-            '<meta http-equiv="Content-Type" ' 'content="text/html; charset=%s">' % enc
-        )
-        r.append("<title>%s</title>\n</head>" % title)
-        r.append("<body>\n<h1>%s</h1>" % title)
-        r.append("<hr>\n<ul>")
 
-        # add user root directory
-        r.append(
-            '<li><a href="%s">%s</a></li>'
-            % (os.path.join("/", self.user, ""), "/")
-        )
-        # add previous directory
-        r.append(
-            '<li><a href="%s">%s</a></li>'
-            % (os.path.join(str(pathlib.Path(self.path).parent), ""), "../")
-        )
-        for name in list:
-            fullname = os.path.join(path, name)
-            displayname = linkname = name
-            # Append / for directories or @ for symbolic links
-            if os.path.isdir(fullname):
-                displayname = name + "/"
-                linkname = name + "/"
-            if os.path.islink(fullname):
-                displayname = name + "@"
-                # Note: a link to a directory displays with @ and links with /
+
+        if mode == "1":
+            display_list = []
+            for name in list:
+                fullname = os.path.join(path, name)
+                displayname = name
+                if os.path.isdir(fullname):
+                    displayname = name + "/"
+                if os.path.islink(fullname):
+                    displayname = name + "@"
+                display_list.append(displayname)
+            
+            encoded = str(display_list).encode(enc)
+            
+        elif mode == "0":
+            r = []
+            displaypath = html.escape(self.simple_path, quote=False)
+            title = "Directory listing for %s" % displaypath
+            r.append("<!DOCTYPE>")
+            r.append("<html>\n<head>")
+            r.append(
+                '<meta http-equiv="Content-Type" ' 'content="text/html; charset=%s">' % enc
+            )
+            r.append("<title>%s</title>\n</head>" % title)
+            r.append("<body>\n<h1>%s</h1>" % title)
+            r.append("<hr>\n<ul>")
+
+            # add user root directory
             r.append(
                 '<li><a href="%s">%s</a></li>'
-                % (urllib.parse.quote(linkname), html.escape(displayname, quote=False))
+                % (os.path.join("/", self.user, ""), "/")
             )
-        r.append("</ul>\n<hr>\n</body>\n</html>\n")
-        encoded = "\n".join(r).encode(enc, "surrogateescape")
+            # add previous directory
+            r.append(
+                '<li><a href="%s">%s</a></li>'
+                % (os.path.join(str(pathlib.Path(self.path).parent), ""), "../")
+            )
+            for name in list:
+                fullname = os.path.join(path, name)
+                displayname = linkname = name
+                # Append / for directories or @ for symbolic links
+                if os.path.isdir(fullname):
+                    displayname = name + "/"
+                    linkname = name + "/"
+                if os.path.islink(fullname):
+                    displayname = name + "@"
+                    # Note: a link to a directory displays with @ and links with /
+                r.append(
+                    '<li><a href="%s">%s</a></li>'
+                    % (urllib.parse.quote(linkname), html.escape(displayname, quote=False))
+                )
+            r.append("</ul>\n<hr>\n</body>\n</html>\n")
+            encoded = "\n".join(r).encode(enc)
+        
         f = io.BytesIO()
         f.write(encoded)
         f.seek(0)
@@ -265,7 +303,7 @@ class HTTPRequestHandler:
         # Checking for and preserving a trailing slash
         ends_with_slash = base_path[-1] == "/" if base_path else False
         # Decoding any percent-encoded characters
-        decoded_path = urllib.parse.unquote(base_path, errors="surrogatepass")
+        decoded_path = urllib.parse.unquote(base_path)
         # Standardizing the path
         standardized_path = posixpath.normpath(decoded_path)
         segments = [seg for seg in standardized_path.split("/") if seg]
@@ -305,8 +343,7 @@ class HTTPRequestHandler:
 
     def finish(self):
         """ """
-        print(self.client_address, "finish")
-
+        pass
 
 class _SocketWriter(BufferedIOBase):
     """Simple writable BufferedIOBase implementation for a socket

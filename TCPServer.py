@@ -46,7 +46,6 @@ class TCPServer:
     def _handle_request(self):
         try:
             request, client_address = self.socket.accept()
-            print(client_address)
             try:
                 # call the RequestHandlerClass use different threads
                 handler = threading.Thread(target=self.RequestHandlerClass, args=(request, client_address, self))
