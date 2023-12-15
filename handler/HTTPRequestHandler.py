@@ -87,15 +87,15 @@ class HTTPRequestHandler:
             segments = [
                 seg
                 for seg in posixpath.normpath(
-                    urllib.parse.unquote(self.query["path"])
+                    urllib.parse.unquote(self.query["path"][0])
                 ).split("/")
                 if seg
             ]
 
-            if len(segments) == 1 and segments[0] == self.user:
+            if len(segments) > 0 and segments[0] == self.user:
                 return False
 
-        self.send_response(HTTPStatus.FORBIDDEN)    
+        self.send_error(HTTPStatus.FORBIDDEN)    
         return True
 
     def handle(self):
@@ -116,7 +116,7 @@ class HTTPRequestHandler:
         if self.path.startswith("//"):
             self.path = "/" + self.path.lstrip("/")
         if self.path.endswith("//"):
-            self.path = "/" + self.path.rstrip("/")
+            self.path = self.path.rstrip("/") + "/"
         
         self.simple_path, self.query = utils.parse_url(self.path)
 
@@ -143,11 +143,13 @@ class HTTPRequestHandler:
 
     def do_POST(self):
         """ Serve a POST request """
-        if self.is_unauthorized() and self.is_bad_request() and self.is_forbidden():
+        if self.is_unauthorized() or self.is_bad_request() or self.is_forbidden():
             return
-    
+        
         if self.post_cmd == "upload":
             self.upload()
+        elif self.post_cmd == "delete":
+            self.delete()
 
 
     def do_HEAD(self):
@@ -156,25 +158,37 @@ class HTTPRequestHandler:
         if f:
             f.close()
     
-    def upload(self):
-        path = self.path2local(self.query["path"])
-        
-        if os.path.isdir(path):
-            content_length = int(self.headers['Content-Length'])
-            file_data = self.rfile.read(content_length)
-            file_name = utils.get_filename_from_content_disposition(self.headers['Content-Disposition'])
-            if file_name is None:
-                file_name = uuid.uuid1()
-            file_path = os.path.join(path, file_name)
-            with open(file_path, 'wb') as file:
-                file.write(file_data)
-            
+    def delete(self):
+        path = self.path2local(self.query["path"][0])
+        if not os.path.isfile(path):
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        try:
+            os.remove(path)
             self.send_response(HTTPStatus.OK)
             self.end_headers()
-
-        else:
+        except OSError:
+            self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR)
+    
+    def upload(self):
+        path = self.path2local(self.query["path"][0])
+        
+        if not os.path.isdir(path):
             # the directory does not exist
             self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        
+        content_length = int(self.headers['Content-Length'])
+        file_data = self.rfile.read(content_length)
+        file_name = utils.get_filename_from_content_disposition(self.headers['Content-Disposition'])
+        if file_name is None:
+            file_name = str(uuid.uuid1())
+        file_path = os.path.join(path, file_name)
+        with open(file_path, 'wb') as file:
+            file.write(file_data)
+        
+        self.send_response(HTTPStatus.OK)
+        self.end_headers()
 
     def is_bad_request(self):
         if self.command == "GET":
@@ -191,7 +205,7 @@ class HTTPRequestHandler:
             segments = [
                 seg
                 for seg in posixpath.normpath(
-                    urllib.parse.unquote(self.path.split("?", 1)[0].split("#", 1)[0])
+                    urllib.parse.unquote(self.simple_path)
                 ).split("/")
                 if seg
             ]

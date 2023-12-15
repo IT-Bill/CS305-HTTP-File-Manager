@@ -68,7 +68,7 @@ def get_filename_from_content_disposition(content_disposition):
     for match in matches:
         if match.group(1):
             # The filename might be URL-encoded
-            filename = urllib.unquote_plus(match.group(1).strip('"'))
+            filename = urllib.parse.unquote_plus(match.group(1).strip('"'))
             return filename
     return None
 
