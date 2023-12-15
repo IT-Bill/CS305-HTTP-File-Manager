@@ -1,4 +1,4 @@
-import time, datetime
+import time, datetime, urllib
 
 def formatdate(timeval=None, localtime=False, usegmt=False):
     """Returns a date string as specified by RFC 2822, e.g.:
@@ -45,3 +45,13 @@ def formatdate(timeval=None, localtime=False, usegmt=False):
             date_str += " +0000"
 
     return date_str
+
+
+def parse_url(url):
+    """  
+    parse url to plain path and query dictionary
+    """
+    parts = urllib.parse.urlsplit(url)
+    path = parts.path
+    query = urllib.parse.parse_qs(parts.query)
+    return path, query
