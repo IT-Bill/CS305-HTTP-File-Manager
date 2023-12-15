@@ -1,9 +1,7 @@
 import argparse
-import asyncio
 import threading
 import time
-from TCPServer import TCPServer
-from handler.HTTPRequestHandler import HTTPRequestHandler
+from lib.server import HTTPRequestHandler, TCPServer
 
     
 

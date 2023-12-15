@@ -2,11 +2,11 @@ from io import BufferedIOBase
 import urllib, os, posixpath, io
 from lib.http import HTTPStatus
 import mimetypes
-from lib import html, utils
+from lib import utils
 import sys
 import traceback
 import shutil
-from lib.http.HTTPMessage import HTTPMessage
+from lib.http import HTTPMessage
 import base64
 import lib
 import pathlib
@@ -312,7 +312,7 @@ class HTTPRequestHandler:
             
         elif mode == "0":
             r = []
-            displaypath = html.escape(self.simple_path, quote=False)
+            displaypath = utils.html_escape(self.simple_path, quote=False)
             title = "Directory listing for %s" % displaypath
             r.append("<!DOCTYPE>")
             r.append("<html>\n<head>")
@@ -345,7 +345,7 @@ class HTTPRequestHandler:
                 
                 r.append(
                     '<li><a href="%s">%s</a></li>'
-                    % (linkname, html.escape(displayname, quote=False))
+                    % (linkname, utils.html_escape(displayname, quote=False))
                 )
 
             r.append("</ul>\n<hr>\n</body>\n</html>\n")

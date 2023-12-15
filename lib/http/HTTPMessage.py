@@ -1,13 +1,7 @@
-CR = '\r'
-LF = '\n'
-CRLF = CR + LF
-bCRLF = CRLF.encode()
-
 class HTTPMessage:
 
     def __init__(self):
         self.headers = {}
-
 
 
     @staticmethod
@@ -27,4 +21,3 @@ class HTTPMessage:
     
     def __getitem__(self, k):
         return self.headers.get(k.lower(), "")
-    
