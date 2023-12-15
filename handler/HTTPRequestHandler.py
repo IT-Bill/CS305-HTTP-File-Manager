@@ -10,6 +10,7 @@ from lib.http.HTTPMessage import HTTPMessage
 import base64
 import lib
 import pathlib
+import uuid
 
 
 class HTTPRequestHandler:
@@ -51,6 +52,7 @@ class HTTPRequestHandler:
                     base64.b64decode(key).decode("utf-8").split(":", maxsplit=1)[0]
                 )
                 return False
+                            
 
         # send UNAUTHORIZED header
         self.send_response(HTTPStatus.UNAUTHORIZED)
@@ -64,25 +66,37 @@ class HTTPRequestHandler:
         Check whether the path is forbidden.
         Redirect if user visites the root.
         """
+        if self.command == "GET":
+            segments = [
+                seg
+                for seg in posixpath.normpath(
+                    urllib.parse.unquote(self.path.split("?", 1)[0].split("#", 1)[0])
+                ).split("/")
+                if seg
+            ]
+            if len(segments) == 0:
+                # Visit the root directory of data, redirect.
+                self.redirect(utils.join_path_query(os.path.join(self.user, ""), {"SUSTech-HTTP": "0"}))
+                return True
 
-        segments = [
-            seg
-            for seg in posixpath.normpath(
-                urllib.parse.unquote(self.path.split("?", 1)[0].split("#", 1)[0])
-            ).split("/")
-            if seg
-        ]
-        if len(segments) == 0:
-            # Redirect
-            self.redirect(os.path.join(self.user, ""))
-            return True
+            if segments[0] == self.user:
+                return False
+        
+        elif self.command == "POST":
+            # check the self.query["path"]
+            segments = [
+                seg
+                for seg in posixpath.normpath(
+                    urllib.parse.unquote(self.query["path"])
+                ).split("/")
+                if seg
+            ]
 
-        elif segments[0] != self.user:
-            self.send_response(HTTPStatus.FORBIDDEN)
-            self.end_headers()
-            return True
+            if len(segments) == 1 and segments[0] == self.user:
+                return False
 
-        return False
+        self.send_response(HTTPStatus.FORBIDDEN)    
+        return True
 
     def handle(self):
         """Handle the http request"""
@@ -115,11 +129,9 @@ class HTTPRequestHandler:
         # actually send the response
         self.wfile.flush()
     
-
-
     def do_GET(self):
         """Serve a GET request"""
-        if self.is_unauthorized() or self.is_forbidden():
+        if self.is_unauthorized() or self.is_forbidden() or self.is_bad_request():
             return
         else:
             f = self.send_head()
@@ -130,14 +142,71 @@ class HTTPRequestHandler:
                     f.close()
 
     def do_POST(self):
-        print("Do post")
-        pass
+        """ Serve a POST request """
+        if self.is_unauthorized() and self.is_bad_request() and self.is_forbidden():
+            return
+    
+        if self.post_cmd == "upload":
+            self.upload()
+
 
     def do_HEAD(self):
         """Serve a HEAD request"""
         f = self.send_head()
         if f:
             f.close()
+    
+    def upload(self):
+        path = self.path2local(self.query["path"])
+        
+        if os.path.isdir(path):
+            content_length = int(self.headers['Content-Length'])
+            file_data = self.rfile.read(content_length)
+            file_name = utils.get_filename_from_content_disposition(self.headers['Content-Disposition'])
+            if file_name is None:
+                file_name = uuid.uuid1()
+            file_path = os.path.join(path, file_name)
+            with open(file_path, 'wb') as file:
+                file.write(file_data)
+            
+            self.send_response(HTTPStatus.OK)
+            self.end_headers()
+
+        else:
+            # the directory does not exist
+            self.send_error(HTTPStatus.NOT_FOUND)
+
+    def is_bad_request(self):
+        if self.command == "GET":
+            # check SUSTech-HTTP query
+            # not dir
+            if not os.path.isdir(self.path2local(self.path)) or \
+                len(self.query) == 1 and \
+                self.query.get("SUSTech-HTTP") != None and \
+                len(self.query["SUSTech-HTTP"]) == 1 and \
+                self.query["SUSTech-HTTP"][0] in ("0", "1"):
+                return False  # correct
+            
+        elif self.command == "POST":
+            segments = [
+                seg
+                for seg in posixpath.normpath(
+                    urllib.parse.unquote(self.path.split("?", 1)[0].split("#", 1)[0])
+                ).split("/")
+                if seg
+            ]
+            if len(segments) == 1 and segments[0] in ["upload", "delete"]:
+                if len(self.query) == 1 and \
+                    self.query.get("path") != None and \
+                    len(self.query["path"]) == 1:
+
+                    # Recode the post command
+                    self.post_cmd = segments[0]
+                    return False
+        
+        self.send_error(HTTPStatus.BAD_REQUEST)
+        return True
+
 
     def redirect(self, new_url, status=HTTPStatus.TEMPORARY_REDIRECT):
         """Redirect to new url."""
@@ -189,17 +258,7 @@ class HTTPRequestHandler:
         except:
             f.close()
             raise
-    
-    def check_query(self):
-        print(self.query)
-        if len(self.query) == 1 and \
-            self.query.get("SUSTech-HTTP") != None and \
-            len(self.query["SUSTech-HTTP"]) == 1 and \
-            self.query["SUSTech-HTTP"][0] in ("0", "1"):
-            return True
-        
-        self.send_error(HTTPStatus.BAD_REQUEST)
-        return False
+
 
     def send_error(self, code):
         self.send_response(code, HTTPStatus(code).phrase)
@@ -220,10 +279,7 @@ class HTTPRequestHandler:
             self.send_error(HTTPStatus.NOT_FOUND)
             return None
         
-        # Determine the mode by `SUSTech-HTTP` query
-        if not self.check_query():
-            return None
-        
+        # already pass the query checking
         mode = self.query["SUSTech-HTTP"][0]
         list.sort(key=lambda a: a.lower())
         enc = sys.getfilesystemencoding()
@@ -236,8 +292,6 @@ class HTTPRequestHandler:
                 displayname = name
                 if os.path.isdir(fullname):
                     displayname = name + "/"
-                if os.path.islink(fullname):
-                    displayname = name + "@"
                 display_list.append(displayname)
             
             encoded = str(display_list).encode(enc)
@@ -258,27 +312,28 @@ class HTTPRequestHandler:
             # add user root directory
             r.append(
                 '<li><a href="%s">%s</a></li>'
-                % (os.path.join("/", self.user, ""), "/")
+                % (utils.join_path_query(os.path.join("/", self.user, ""), self.query), "/")
             )
             # add previous directory
             r.append(
                 '<li><a href="%s">%s</a></li>'
-                % (os.path.join(str(pathlib.Path(self.path).parent), ""), "../")
+                % (utils.join_path_query(os.path.join(str(pathlib.Path(self.path).parent), ""), self.query), "../")
             )
             for name in list:
                 fullname = os.path.join(path, name)
                 displayname = linkname = name
-                # Append / for directories or @ for symbolic links
                 if os.path.isdir(fullname):
                     displayname = name + "/"
-                    linkname = name + "/"
-                if os.path.islink(fullname):
-                    displayname = name + "@"
-                    # Note: a link to a directory displays with @ and links with /
+                    linkname = utils.join_path_query(urllib.parse.quote(name + "/"), self.query)
+                else:  
+                    # file
+                    linkname = urllib.parse.quote(name)
+                
                 r.append(
                     '<li><a href="%s">%s</a></li>'
-                    % (urllib.parse.quote(linkname), html.escape(displayname, quote=False))
+                    % (linkname, html.escape(displayname, quote=False))
                 )
+
             r.append("</ul>\n<hr>\n</body>\n</html>\n")
             encoded = "\n".join(r).encode(enc)
         
