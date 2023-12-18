@@ -52,6 +52,7 @@ class HTTPRequestHandler:
         self.send_header("WWW-Authenticate", 'Basic realm="Test"')
         self.send_header("Content-type", "text\html")
         self.end_headers()
+        self.close_connection = True
         return True
 
     def is_forbidden(self):
@@ -94,9 +95,8 @@ class HTTPRequestHandler:
 
     def handle(self):
         """Handle the http request"""
-        # default to keep-alive
         self.close_connection = False
-        
+        print(threading.current_thread().name)
         self.handle_one_request()
         while not self.close_connection:
             self.handle_one_request()
