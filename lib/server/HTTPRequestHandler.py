@@ -1,6 +1,7 @@
 from lib.http import HTTPStatus, HTTPMessage
 from lib import utils
 import lib
+from lib.http.HTTPMessage import Response
 
 import urllib, pathlib, posixpath, mimetypes, threading
 import os, io, sys, shutil
@@ -13,7 +14,6 @@ class HTTPRequestHandler:
         self.request = request
         self.client_address = client_address
         self.server = server
-        self._headers_buffer = None
 
         # self.headers: HTTPMessage = None
         self.directory = os.path.join(os.getcwd(), "data")
@@ -29,9 +29,9 @@ class HTTPRequestHandler:
 
     def setup(self):
         """Setup the request socket"""
-        self._headers_buffer = []
         self.rfile = self.request.makefile("rb", -1)
         self.wfile = _SocketWriter(self.request)
+        self._response = Response(self.wfile)
 
     def is_unauthorized(self):
         """
@@ -48,10 +48,10 @@ class HTTPRequestHandler:
                 return False
 
         # send UNAUTHORIZED header
-        self.send_response(HTTPStatus.UNAUTHORIZED)
-        self.send_header("WWW-Authenticate", 'Basic realm="Test"')
-        self.send_header("Content-type", "text\html")
-        self.end_headers()
+        self._response.set_status_line(HTTPStatus.UNAUTHORIZED)
+        self._response.set_header("WWW-Authenticate", 'Basic realm="Test"')
+        self._response.set_header("Content-type", "text\html")
+        self._response.write_headers()
         return True
 
     def is_forbidden(self):
@@ -89,16 +89,17 @@ class HTTPRequestHandler:
             if len(segments) > 0 and segments[0] == self.user:
                 return False
 
-        self.send_error(HTTPStatus.FORBIDDEN)    
+        self.response_error(HTTPStatus.FORBIDDEN)    
         return True
 
     def handle(self):
         """Handle the http request"""
         # default to keep-alive
         self.close_connection = False
-        
+
         self.handle_one_request()
         while not self.close_connection:
+            print("aaaaaaaaaaaaaa")
             self.handle_one_request()
 
     def handle_one_request(self):
@@ -123,6 +124,7 @@ class HTTPRequestHandler:
         method()
         # actually send the response
         self.wfile.flush()
+        
     
     def do_GET(self):
         """Serve a GET request"""
@@ -156,21 +158,22 @@ class HTTPRequestHandler:
     def delete(self):
         path = self.path2local(self.query["path"][0])
         if not os.path.isfile(path):
-            self.send_error(HTTPStatus.NOT_FOUND)
+            self.response_error(HTTPStatus.NOT_FOUND)
             return
         try:
             os.remove(path)
-            self.send_response(HTTPStatus.OK)
-            self.end_headers()
+            self._response.set_status_line(HTTPStatus.OK)
+            self._response.write_headers()
+            
         except OSError:
-            self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR)
+            self.response_error(HTTPStatus.INTERNAL_SERVER_ERROR)
     
     def upload(self):
         path = self.path2local(self.query["path"][0])
         
         if not os.path.isdir(path):
             # the directory does not exist
-            self.send_error(HTTPStatus.NOT_FOUND)
+            self.response_error(HTTPStatus.NOT_FOUND)
             return
         
         content_length = int(self.headers['Content-Length'])
@@ -182,8 +185,8 @@ class HTTPRequestHandler:
         with open(file_path, 'wb') as file:
             file.write(file_data)
         
-        self.send_response(HTTPStatus.OK)
-        self.end_headers()
+        self._response.set_status_line(HTTPStatus.OK)
+        self._response.write_headers()        
 
     def is_bad_request(self):
         if self.command == "GET":
@@ -213,16 +216,16 @@ class HTTPRequestHandler:
                     self.post_cmd = segments[0]
                     return False
         
-        self.send_error(HTTPStatus.BAD_REQUEST)
+        self.response_error(HTTPStatus.BAD_REQUEST)
         return True
 
 
     def redirect(self, new_url, status=HTTPStatus.TEMPORARY_REDIRECT):
         """Redirect to new url."""
-        self.send_response(status)
-        self.send_header("Location", new_url)
-        self.send_header("Content-Length", "0")
-        self.end_headers()
+        self._response.set_status_line(status)
+        self._response.set_header("Location", new_url)
+        self._response.set_header("Content-Length", "0")
+        self._response.write_headers()
 
     def send_head(self):
         path = self.path2local(self.path)
@@ -242,37 +245,34 @@ class HTTPRequestHandler:
                     break
             else:
                 return self.list_directory(path)
+            
         ctype, _ = mimetypes.guess_type(path)
 
         # parseing and rejection of filenames with a trailing slash
         if path.endswith("/"):
-            self.send_error(HTTPStatus.NOT_FOUND)
+            self.response_error(HTTPStatus.NOT_FOUND)
             return None
+        
         try:
             f = open(path, "rb")
         except OSError:
-            self.send_error(HTTPStatus.NOT_FOUND)
+            self.response_error(HTTPStatus.NOT_FOUND)
             return None
 
         try:
             fs = os.fstat(f.fileno())
             # TODO: use browser cache
 
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-type", ctype)
-            self.send_header("Content-Length", fs.st_size)
-            self.send_header("Last-Modified", utils.formatdate(fs.st_mtime))
-            self.end_headers()
+            self._response.set_status_line(HTTPStatus.OK)
+            self._response.set_header("Content-type", ctype)
+            self._response.set_header("Content-Length", fs.st_size)
+            self._response.set_header("Last-Modified", utils.formatdate(fs.st_mtime))
+            self._response.write_headers()
             return f
         except:
             f.close()
             raise
 
-
-    def send_error(self, code):
-        self.send_response(code, HTTPStatus(code).phrase)
-        self.send_header("Connection", "close")
-        self.end_headers()
 
     def list_directory(self, path):
         """Helper to produce a directory listing (absent index.html).
@@ -285,7 +285,7 @@ class HTTPRequestHandler:
         try:
             list = os.listdir(path)
         except OSError:
-            self.send_error(HTTPStatus.NOT_FOUND)
+            self.response_error(HTTPStatus.NOT_FOUND)
             return None
         
         # already pass the query checking
@@ -349,10 +349,10 @@ class HTTPRequestHandler:
         f = io.BytesIO()
         f.write(encoded)
         f.seek(0)
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-type", "text/html; charset=%s" % enc)
-        self.send_header("Content-Length", str(len(encoded)))
-        self.end_headers()
+        self._response.set_status_line(HTTPStatus.OK)
+        self._response.set_header("Content-type", "text/html; charset=%s" % enc)
+        self._response.set_header("Content-Length", str(len(encoded)))
+        self._response.write_headers()
         return f
 
     def path2local(self, path):
@@ -381,29 +381,9 @@ class HTTPRequestHandler:
             final_path += "/"
         return final_path
 
-    def send_response(self, status, msg=None):
-        """Send the response header only"""
-        if msg is None:
-            msg = HTTPStatus(status).phrase
-        self._headers_buffer.append(
-            ("%s %d %s\r\n" % ("HTTP/1.1", status, msg)).encode("latin-1", "strict")
-        )
-        self.send_header("Date", utils.formatdate(usegmt=True))
-
-    def send_header(self, k, v):
-        """Add a header to the headers buffer"""
-        self._headers_buffer.append(("%s: %s\r\n" % (k, v)).encode("latin-1", "strict"))
-        if k.lower() == "connection":
-            if v.lower() == "close":
-                self.close_connection = True
-            elif v.lower() == "keep-alive":
-                self.close_connection = False
-
-    def end_headers(self):
-        self._headers_buffer.append(b"\r\n")
-        # send the headers by invoke `write`
-        self.wfile.write(b"".join(self._headers_buffer))
-        self._headers_buffer = []
+    def response_error(self, status, msg=None):
+        self._response.error(status, msg)
+        self.close_connection = True
 
     def finish(self):
         """ """
