@@ -46,7 +46,6 @@ class HTTPRequestHandler:
                     base64.b64decode(key).decode("utf-8").split(":", maxsplit=1)[0]
                 )
                 return False
-                            
 
         # send UNAUTHORIZED header
         self.send_response(HTTPStatus.UNAUTHORIZED)
