@@ -2,7 +2,7 @@ from lib.http import HTTPStatus, HTTPMessage
 from lib import utils
 import lib
 
-import urllib, pathlib, posixpath, mimetypes
+import urllib, pathlib, posixpath, mimetypes, threading
 import os, io, sys, shutil
 import base64, uuid
 import traceback
@@ -94,8 +94,9 @@ class HTTPRequestHandler:
 
     def handle(self):
         """Handle the http request"""
-        self.close_connection = True  # !
-
+        # default to keep-alive
+        self.close_connection = False
+        
         self.handle_one_request()
         while not self.close_connection:
             self.handle_one_request()
