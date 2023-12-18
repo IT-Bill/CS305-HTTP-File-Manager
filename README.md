@@ -12,8 +12,8 @@
 - [x] Click to download
 
 ### Upload and Delete
-- [ ] Upload
-- [ ] Delete
+- [x] Upload
+- [x] Delete
 
 ### Cookies and Session
 - [ ]
