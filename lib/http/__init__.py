@@ -1,5 +1,5 @@
-from .HTTPMessage import HTTPMessage
+from .HTTPMessage import Request, Response
 from .HTTPStatus import HTTPStatus
 from . import cookies
 
-__all__ = ['HTTPStatus', 'HTTPMessage', 'cookies']
+__all__ = ['HTTPStatus', 'Request', 'Response', 'cookies']

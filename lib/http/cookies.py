@@ -20,4 +20,9 @@ def validate_session_id(session_id):
         return session_info['user']
     return None
 
-    
+def generate_cookie_with_max_age(user, max_age=20):
+    sessions_id = str(uuid.uuid4())
+    sessions_id[sessions_id] = {
+        "user": user,
+        "Max-Age": max_age
+    }
