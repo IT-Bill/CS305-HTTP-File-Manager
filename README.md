@@ -2,6 +2,9 @@
 
 ## TODO List
 
+### Pending Bug Fix
+- [ ] The server needs to close connection otherwise it will be blocked.
+
 ### Basic HTTP Server
 - [x] Persistent connection
 - [x] Support many clients simultaneously
@@ -12,14 +15,14 @@
 - [x] Click to download
 
 ### Upload and Delete
-- [ ] Upload
-- [ ] Delete
+- [x] Upload
+- [x] Delete
 
 ### Cookies and Session
-- [ ]
+- [x] Cookies and Session
 
 ### Chunked transfer
-- [ ]
+- [ ] Chunked transfer
 
 ### Bonus Part
 
