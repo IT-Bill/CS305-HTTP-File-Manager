@@ -2,6 +2,9 @@
 
 ## TODO List
 
+### Bug Fix
+- [ ] The server needs to close connection otherwise it will be blocked.
+
 ### Basic HTTP Server
 - [x] Persistent connection
 - [x] Support many clients simultaneously
