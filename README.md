@@ -2,7 +2,7 @@
 
 ## TODO List
 
-### Bug Fix
+### Pending Bug Fix
 - [ ] The server needs to close connection otherwise it will be blocked.
 
 ### Basic HTTP Server
@@ -19,10 +19,10 @@
 - [x] Delete
 
 ### Cookies and Session
-- [ ]
+- [x] Cookies and Session
 
 ### Chunked transfer
-- [ ]
+- [ ] Chunked transfer
 
 ### Bonus Part
 
