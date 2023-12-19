@@ -26,6 +26,8 @@ class Request:
         self.simple_path = None
         self.query = None
         self.headers = {}
+        self.cookie = None
+        self.auth = None
     
     def get_header(self, k):
         return self.headers.get(k.lower())

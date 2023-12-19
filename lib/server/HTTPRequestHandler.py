@@ -2,7 +2,8 @@ from lib.http import HTTPStatus, HTTPMessage
 from lib import utils
 import lib
 from lib.http.HTTPMessage import Response, Request
-from lib.http import cookies
+from lib.http.cookiejar import CookieJar
+from lib.http.auth import BasicAuth
 
 import urllib, pathlib, posixpath, mimetypes, threading
 import os, io, sys, shutil
@@ -48,34 +49,25 @@ class HTTPRequestHandler:
             self._response.write_headers()
             self.close_connection = True
 
-        cookie = self._request.get_header("Cookie")
         if self.use_cookie:
-            if cookie:
-                session_id = cookie.split(";")[0].split("=", maxsplit=1)[1]
-                cookie_user = cookies.validate_session_id(session_id)
-                if cookie_user:
-                    # Cookie is valid
-                    self.user = cookie_user
-                    return False
+            cookie = CookieJar.from_cookie_header(self._request.get_header("Cookie"))
+            if cookie and cookie.valid:
+                self._request.cookie = cookie
+                return False
             
             self.use_cookie = False
             set_unauthorized_response()
             return True
 
-        authorization = self._request.get_header("authorization")
-        if authorization:
-            key = authorization.split(maxsplit=1)[1]
-            if key in lib.keys:
-                user = base64.b64decode(key).decode("utf-8").split(":", maxsplit=1)[0]
-                self._response.add_header("Set-Cookie", "session-id={}; Max-Age={}".format(cookies.generate_session_id(user), 10))
+        auth = BasicAuth.from_auth_header(self._request.get_header("authorization"))
+        if auth and auth.valid:
+            self._request.auth = auth
+            self._response.add_header("Set-Cookie", str(CookieJar.generate_cookie(auth.username)))
 
-                # redirect when different user logins
-                if not hasattr(self, user) or self.user != user:
-                    self.user = user
-                    # self.redirect(utils.join_path_query(os.path.join(self.user, ""), {"SUSTech-HTTP": "0"}))
-                
-                self.use_cookie = True
-                return False
+            # TODO: redirect when different user logins
+
+            self.use_cookie = True
+            return False
 
         # send UNAUTHORIZED header
         set_unauthorized_response()
@@ -97,10 +89,10 @@ class HTTPRequestHandler:
             ]
             if len(segments) == 0:
                 # Visit the root directory of data, redirect.
-                self.redirect(utils.join_path_query(os.path.join(self.user, ""), {"SUSTech-HTTP": "0"}))
+                self.redirect(utils.join_path_query(os.path.join(self._request.auth.username, ""), {"SUSTech-HTTP": "0"}))
                 return True
 
-            if segments[0] == self.user:
+            if segments[0] == self._request.auth.username:
                 return False
         
         elif self._request.cmd == "POST":
@@ -113,7 +105,7 @@ class HTTPRequestHandler:
                 if seg
             ]
 
-            if len(segments) > 0 and segments[0] == self.user:
+            if len(segments) > 0 and segments[0] == self._request.auth.username:
                 return False
 
         self.response_error(HTTPStatus.FORBIDDEN)    
@@ -142,7 +134,6 @@ class HTTPRequestHandler:
 
         self._request.cmd, self._request.path = command, path
         self._request.simple_path, self._request.query = utils.parse_url(self._request.path)
-
         # parse header
         self._request.headers = HTTPMessage.parse_headers(self.rfile)
 
@@ -151,6 +142,7 @@ class HTTPRequestHandler:
         method()
         # actually send the response
         self.wfile.flush()
+        
         
     
     def do_GET(self):
@@ -351,7 +343,7 @@ class HTTPRequestHandler:
             # add user root directory
             r.append(
                 '<li><a href="%s">%s</a></li>'
-                % (utils.join_path_query(os.path.join("/", self.user, ""), self._request.query), "/")
+                % (utils.join_path_query(os.path.join("/", self._request.auth.username, ""), self._request.query), "/")
             )
             # add previous directory
             r.append(
