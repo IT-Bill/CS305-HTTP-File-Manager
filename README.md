@@ -22,7 +22,7 @@
 - [x] Cookies and Session
 
 ### Chunked transfer
-- [ ] Chunked transfer
+- [x] Chunked transfer
 
 ### Bonus Part
 

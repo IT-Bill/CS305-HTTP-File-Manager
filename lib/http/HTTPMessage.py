@@ -56,6 +56,9 @@ class Response:
     def add_header(self, k, v):
         self.headers[k] = v
 
+    def remove_header(self, k):
+        return self.headers.pop(k, None)
+
     def header_encode(self, header):
         return header.encode("latin-1", "strict")
     
@@ -72,3 +75,4 @@ class Response:
         self.stream.write(b"".join(map(self.header_encode, buffer)))
         
         self.headers.clear()
+    
