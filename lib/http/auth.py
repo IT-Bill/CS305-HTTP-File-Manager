@@ -14,7 +14,7 @@ def _basic_auth_str(username, password):
     return authstr
 
 class BasicAuth:
-    _info = [("111", ""), ("222", ""), ("333", "")]
+    _info = [("111", ""), ("222", ""), ("333", ""), ("client1", "123")]
 
     def __init__(self, username, password):
         self.username = username

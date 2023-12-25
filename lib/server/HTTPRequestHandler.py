@@ -213,20 +213,21 @@ class HTTPRequestHandler:
                 return False # correct
             
         elif self._request.cmd == "POST":
-            segments = [
-                seg
-                for seg in posixpath.normpath(
-                    urllib.parse.unquote(self._request.simple_path)
-                ).split("/")
-                if seg
-            ]
-            if len(segments) == 1 and segments[0] in ["upload", "delete"]:
-                if self._request.query.get("path") != None and \
-                    len(self._request.query["path"]) == 1:
+            # segments = [
+            #     seg
+            #     for seg in posixpath.normpath(
+            #         urllib.parse.unquote(self._request.simple_path)
+            #     ).split("/")
+            #     if seg
+            # ]
+            # if len(segments) == 1 and segments[0] in ["upload", "delete"]:
+            #     if self._request.query.get("path") != None and \
+            #         len(self._request.query["path"]) == 1:
 
-                    # Recode the post command
-                    self.post_cmd = segments[0]
-                    return False
+            #         # Recode the post command
+            #         self.post_cmd = segments[0]
+            #         return False
+            return False
         
         self.response_error(HTTPStatus.BAD_REQUEST)
         return True
@@ -331,7 +332,7 @@ class HTTPRequestHandler:
         enc = sys.getfilesystemencoding()
 
 
-        if mode == "1":
+        if mode == "0":
             display_list = []
             for name in list:
                 fullname = os.path.join(path, name)
@@ -342,7 +343,7 @@ class HTTPRequestHandler:
             
             encoded = str(display_list).encode(enc)
             
-        elif mode == "0":
+        elif mode == "1":
             r = []
             displaypath = utils.html_escape(self._request.simple_path, quote=False)
             title = "Directory listing for %s" % displaypath
