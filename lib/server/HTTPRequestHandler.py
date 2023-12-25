@@ -347,7 +347,7 @@ class HTTPRequestHandler:
         list.sort(key=lambda a: a.lower())
         enc = sys.getfilesystemencoding()
 
-        if mode == "1":
+        if mode == "0":
             display_list = []
             for name in list:
                 fullname = os.path.join(path, name)
@@ -357,8 +357,8 @@ class HTTPRequestHandler:
                 display_list.append(displayname)
 
             encoded = str(display_list).encode(enc)
-
-        elif mode == "0":
+            
+        elif mode == "1":
             r = []
             displaypath = utils.html_escape(self._request.simple_path, quote=False)
             title = "Directory listing for %s" % displaypath
