@@ -1,21 +1,27 @@
 from lib.http import HTTPStatus, HTTPMessage
 from lib import utils
-import lib
 from lib.http.HTTPMessage import Response, Request
 from lib.http.cookiejar import CookieJar
 from lib.http.auth import BasicAuth
 
 import urllib, pathlib, posixpath, mimetypes, threading
 import os, io, sys, shutil
-import base64, uuid
+import uuid
 import traceback
 
 
 class HTTPRequestHandler:
+    NO_NEED_AUTH_PATH = ["/favicon.ico", "/get_public_key"]
+
     def __init__(self, request, client_address, server):
         self.request = request
         self.client_address = client_address
         self.server = server
+
+        # encryption
+        self.private_key, self.public_key = utils.generate_rsa_keys()
+        self.symmetric_key = utils.generate_symmetric_key()
+        self.encrypted_sym_key = utils.encrypt_msg_with_public_key
 
         self.directory = os.path.join(os.getcwd(), "data")
 
@@ -88,7 +94,7 @@ class HTTPRequestHandler:
 
     def do_GET(self):
         """Serve a GET request"""
-        if self._request.path != "/favicon.ico" and (
+        if (self._request.path not in HTTPRequestHandler.NO_NEED_AUTH_PATH) and (
             self.is_unauthorized() or self.is_forbidden() or self.is_bad_request()
         ):
             return
@@ -142,6 +148,13 @@ class HTTPRequestHandler:
                     break
             else:
                 return self.list_directory(path)
+
+        # check whether client needs public key
+        if self._request.path == "/get_public_key":
+            self._response.set_status_line(HTTPStatus.OK)
+            self._response.add_header("Server-Key", self.public_key)
+            self._request.write_headers()
+            return None
 
         # isfile
         ctype, _ = mimetypes.guess_type(path)
@@ -252,15 +265,15 @@ class HTTPRequestHandler:
             self._response.write_headers()
             self.close_connection = True
 
-        if self.use_cookie:
-            cookie = CookieJar.from_cookie_header(self._request.get_header("Cookie"))
-            if cookie and cookie.valid:
-                self._request.cookie = cookie
-                return False
+        # if self.use_cookie:
+        #     cookie = CookieJar.from_cookie_header(self._request.get_header("Cookie"))
+        #     if cookie and cookie.valid:
+        #         self._request.cookie = cookie
+        #         return False
 
-            self.use_cookie = False
-            set_unauthorized_response()
-            return True
+        #     self.use_cookie = False
+        #     set_unauthorized_response()
+        #     return True
 
         auth = BasicAuth.from_auth_header(self._request.get_header("authorization"))
         if auth and auth.valid:
@@ -359,7 +372,7 @@ class HTTPRequestHandler:
                 display_list.append(displayname)
 
             encoded = str(display_list).encode(enc)
-            
+
         elif mode == "1":
             r = []
             displaypath = utils.html_escape(self._request.simple_path, quote=False)
