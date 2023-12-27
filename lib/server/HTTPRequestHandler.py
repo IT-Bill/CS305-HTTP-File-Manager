@@ -44,15 +44,21 @@ class HTTPRequestHandler:
 
         self.handle_one_request()
         while not self.close_connection:
+            self.setup()
             self.handle_one_request()
 
     def handle_one_request(self):
         """Handle a single HTTP request"""
         # `readline` is used to read one line of request message
-        start_line = str(self.rfile.readline(1024), "iso-8859-1").rstrip("\r\n")
+        start_line = str(self.rfile.readline(10240), "iso-8859-1").rstrip("\r\n")
         # GET /path HTTP/1.1
+        words = start_line.split()
+        if len(words) != 3:
+            self.close_connection = True
+            return
         command, path, _ = start_line.split()
-        path = urllib.unquote(path) # Prevent wrong quote in Windowns
+        path = urllib.parse.unquote(path) # Prevent wrong quote in Windowns
+        path = path.replace("\\", "/")
         print(command, path, _)
 
         if path.startswith("//"):
@@ -103,8 +109,31 @@ class HTTPRequestHandler:
                         self._response.write_headers()
                         self.send_chunked_response(f)
                     else:
-                        self._response.write_headers()
-                        shutil.copyfileobj(f, self.wfile)
+                        # breakpoint transmission
+                        range_header = self._request.get_header('Range')
+                        if range_header:
+                            ranges = [tuple(map(int, r.split('-'))) for r in range_header[range_header.index('bytes=') + 6:].split(',')]
+                            file_size = os.path.getsize(f.name)
+                            if all(0 <= start <= end < file_size for start, end in ranges):
+                                boundary = '3d6b6a416f9b5'
+                                self._response.add_header('Content-Type', f'multipart/byteranges; boundary={boundary}')
+                                # Partial Content
+                                self._response.set_status_line(HTTPStatus.PARTIAL_CONTENT) 
+                                self._response.write_headers()
+                                for range_start, range_end in ranges:
+                                    f.seek(range_start)
+                                    self.wfile.write(f'--{boundary}\r\n')
+                                    self.wfile.write(f'Content-Type: {mimetypes.guess_type(f.name)}\r\n')
+                                    self.wfile.write(f'Content-Range: bytes {range_start}-{range_end}/{file_size}\r\n\r\n')
+                                    shutil.copyfileobj(f, self.wfile, range_end - range_start + 1)
+                                    self.wfile.write('\r\n')
+                                self.wfile.write(f'--{boundary}--\r\n')
+                            else:
+                                self._response.status_code = 416  # Range Not Satisfiable
+                                self._response.write_headers()
+                        else:
+                            self._response.write_headers()
+                            shutil.copyfileobj(f, self.wfile)
                 finally:
                     f.close()
 
@@ -252,15 +281,15 @@ class HTTPRequestHandler:
             self._response.write_headers()
             self.close_connection = True
 
-        if self.use_cookie:
-            cookie = CookieJar.from_cookie_header(self._request.get_header("Cookie"))
-            if cookie and cookie.valid:
-                self._request.cookie = cookie
-                return False
-
-            self.use_cookie = False
-            set_unauthorized_response()
-            return True
+        # if self.use_cookie:
+        #     cookie = CookieJar.from_cookie_header(self._request.get_header("Cookie"))
+        #     if cookie and cookie.valid:
+        #         self._request.cookie = cookie
+        #         return False
+            
+        #     self.use_cookie = False
+        #     set_unauthorized_response()
+        #     return True
 
         auth = BasicAuth.from_auth_header(self._request.get_header("authorization"))
         if auth and auth.valid:
@@ -271,7 +300,7 @@ class HTTPRequestHandler:
 
             # TODO: redirect when different user logins
 
-            self.use_cookie = True
+            # self.use_cookie = True
             return False
 
         # send UNAUTHORIZED header
