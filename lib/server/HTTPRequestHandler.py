@@ -21,6 +21,7 @@ class HTTPRequestHandler:
 
         self.use_cookie = False
 
+        self.rfile = self.request.makefile("rb", -1)
         self.setup()
 
         try:
@@ -32,7 +33,6 @@ class HTTPRequestHandler:
 
     def setup(self):
         """Setup the request socket"""
-        self.rfile = self.request.makefile("rb", -1)
         self.wfile = _SocketWriter(self.request)
 
         self._request = Request()
@@ -44,12 +44,18 @@ class HTTPRequestHandler:
 
         self.handle_one_request()
         while not self.close_connection:
+            self.setup()
             self.handle_one_request()
 
     def handle_one_request(self):
         """Handle a single HTTP request"""
         # `readline` is used to read one line of request message
-        start_line = str(self.rfile.readline(1024), "iso-8859-1").rstrip("\r\n")
+        start_line = str(self.rfile.readline(65537), "iso-8859-1").rstrip("\r\n")
+        if not start_line:
+            print("Empty command line")
+            self.close_connection = True
+            return
+        
         # GET /path HTTP/1.1
         command, path, _ = start_line.split()
         path = urllib.parse.unquote(path) # Prevent wrong quote in Windowns
@@ -73,6 +79,10 @@ class HTTPRequestHandler:
         method()
         # actually send the response
         self.wfile.flush()
+
+        conn = self._request.get_header("Connection")
+        if conn and conn == "close":
+            self.close_connection = True
 
     def send_chunked_response(self, f):
         """Send data in chunks for chunked transfer encoding."""
@@ -104,8 +114,36 @@ class HTTPRequestHandler:
                         self._response.write_headers()
                         self.send_chunked_response(f)
                     else:
-                        self._response.write_headers()
-                        shutil.copyfileobj(f, self.wfile)
+                        # breakpoint transmission
+                        range_header = self._request.get_header('Range')
+                        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                        self._response.remove_header("Content-Length")  # !!!!!!
+                        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                        if range_header:
+                            ranges = [tuple(map(int, r.split('-'))) for r in range_header[range_header.index('bytes=') + 6:].split(',')]
+                            file_size = os.path.getsize(f.name)
+                            if all(0 <= start <= end < file_size for start, end in ranges):
+                                boundary = '3d6b6a416f9b5'
+                                self._response.add_header('Content-Type', f'multipart/byteranges; boundary={boundary}')
+                                # Partial Content
+                                self._response.set_status_line(HTTPStatus.PARTIAL_CONTENT) 
+                                self._response.write_headers()
+                                for range_start, range_end in ranges:
+                                    f.seek(range_start)
+                                    self.wfile.write(f'--{boundary}\r\n')
+                                    self.wfile.write(f'Content-Type: {mimetypes.guess_type(f.name)[0]}\r\n')
+                                    self.wfile.write(f'Content-Range: bytes {range_start}-{range_end}/{file_size}\r\n\r\n')
+                                    # shutil.copyfileobj(f, self.wfile, range_end - range_start + 1)
+                                    self.wfile.write(f.read(range_end - range_start + 1))
+                                    self.wfile.write('\r\n')
+                                self.wfile.write(f'--{boundary}--\r\n')
+                            else:
+                                # Range Not Satisfiable
+                                self._response.set_status_line(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                                self._response.write_headers()
+                        else:
+                            self._response.write_headers()
+                            shutil.copyfileobj(f, self.wfile)
                 finally:
                     f.close()
 
@@ -253,15 +291,15 @@ class HTTPRequestHandler:
             self._response.write_headers()
             self.close_connection = True
 
-        if self.use_cookie:
-            cookie = CookieJar.from_cookie_header(self._request.get_header("Cookie"))
-            if cookie and cookie.valid:
-                self._request.cookie = cookie
-                return False
-
-            self.use_cookie = False
-            set_unauthorized_response()
-            return True
+        # if self.use_cookie:
+        #     cookie = CookieJar.from_cookie_header(self._request.get_header("Cookie"))
+        #     if cookie and cookie.valid:
+        #         self._request.cookie = cookie
+        #         return False
+            
+        #     self.use_cookie = False
+        #     set_unauthorized_response()
+        #     return True
 
         auth = BasicAuth.from_auth_header(self._request.get_header("authorization"))
         if auth and auth.valid:
@@ -272,7 +310,7 @@ class HTTPRequestHandler:
 
             # TODO: redirect when different user logins
 
-            self.use_cookie = True
+            # self.use_cookie = True
             return False
 
         # send UNAUTHORIZED header
@@ -458,13 +496,13 @@ class HTTPRequestHandler:
 
     def finish(self):
         """ """
-        pass
 
 
 class _SocketWriter(io.BufferedIOBase):
-    """Simple writable BufferedIOBase implementation for a socket
-
-    Does not hold data in a buffer, avoiding any need to call flush()."""
+    """
+    Simple writable BufferedIOBase implementation for a socket
+    Does not hold data in a buffer, avoiding any need to call flush().
+    """
 
     def __init__(self, sock):
         self._sock = sock
@@ -474,10 +512,12 @@ class _SocketWriter(io.BufferedIOBase):
 
     def write(self, b):
         if isinstance(b, str):
-            b = b.encode("utf-8")
+            print("str to byte")
+            b = b.encode()
 
         self._sock.sendall(b)
         with memoryview(b) as view:
+            print(len(b))
             return view.nbytes
 
     def fileno(self):

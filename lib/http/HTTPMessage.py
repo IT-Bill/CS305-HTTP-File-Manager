@@ -56,10 +56,10 @@ class Response:
         self.add_header("Date", utils.formatdate(usegmt=True))
     
     def add_header(self, k, v):
-        self.headers[k] = v
+        self.headers[k.lower()] = v
 
     def remove_header(self, k):
-        return self.headers.pop(k, None)
+        return self.headers.pop(k.lower(), None)
 
     def header_encode(self, header):
         return header.encode("latin-1", "strict")
