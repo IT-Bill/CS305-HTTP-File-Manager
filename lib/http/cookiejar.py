@@ -12,7 +12,7 @@ class CookieJar:
         return '; '.join(["{}={}".format(k, v) for k, v in self.cookies.items()])
 
     @classmethod
-    def generate_cookie(cls, username, max_age=10):
+    def generate_cookie(cls, username, max_age=100):
         cookie = CookieJar()
         session_id = str(uuid.uuid4())
         cookie.cookies = {

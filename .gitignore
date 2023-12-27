@@ -1,4 +1,6 @@
+# Remove self-test file
 test*.py
+test*.ipynb
 
 # For VSCode
 .vscode

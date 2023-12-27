@@ -4,6 +4,10 @@ import enum
 class HTTPStatus(enum.IntEnum):
     """ HTTP status codes and reason phrases """
     def __new__(cls, value, phrase, description=''):
+        """ 
+        Usage:
+        Given a HTTPStatus `status`, use `status.phrase` to get detail message.
+        """
         obj = int.__new__(cls, value)
         obj._value_ = value
 

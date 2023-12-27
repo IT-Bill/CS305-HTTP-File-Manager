@@ -14,6 +14,7 @@ def _basic_auth_str(username, password):
     return authstr
 
 class BasicAuth:
+    # TODO: User info. Try to move them to a config file.
     _info = [("111", ""), ("222", ""), ("333", ""), ("client1", "123")]
 
     def __init__(self, username, password):

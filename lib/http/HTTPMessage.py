@@ -3,10 +3,12 @@ from lib import utils
 
 
 def parse_headers(fp):
+    """ Parse the header except to a dict """
     headers = {}
 
     while True:
         line = fp.readline(1024)
+        # Header will end with \r\n
         if line in (b'\r\n', b'\n', b''):
             break
         
@@ -18,7 +20,7 @@ def parse_headers(fp):
 
 
 class Request:
-    """  """
+    """ Request from client """
 
     def __init__(self):
         self.cmd = None
@@ -33,7 +35,7 @@ class Request:
         return self.headers.get(k.lower())
 
 class Response:
-    """  """
+    """ Response to client """
     HTTP_VERSION = "HTTP/1.1"
 
     def __init__(self, stream=None):
@@ -64,11 +66,12 @@ class Response:
     
     def error(self, status, msg=None):
         self.set_status_line(status, msg)
-        self.add_header("Connection", "close")
+        self.add_header("Connection", "close") # TODO: default to close
         self.write_headers()
     
     
     def write_headers(self):
+        """ Write header to buffer """
         buffer = [("%s %d %s\r\n" % (Response.HTTP_VERSION, self.status, self.msg))] + \
             [("%s: %s\r\n" % (k, v)) for k, v in self.headers.items()] + \
             ["\r\n"]
