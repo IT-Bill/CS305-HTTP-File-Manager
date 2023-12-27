@@ -52,7 +52,7 @@ class HTTPRequestHandler:
         start_line = str(self.rfile.readline(1024), "iso-8859-1").rstrip("\r\n")
         # GET /path HTTP/1.1
         command, path, _ = start_line.split()
-        path = urllib.unquote(path) # Prevent wrong quote in Windowns
+        path = urllib.parse.unquote(path) # Prevent wrong quote in Windowns
         print(command, path, _)
 
         if path.startswith("//"):
