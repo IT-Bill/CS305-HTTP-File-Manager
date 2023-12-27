@@ -50,9 +50,11 @@ class HTTPRequestHandler:
         """Handle a single HTTP request"""
         # `readline` is used to read one line of request message
         start_line = str(self.rfile.readline(1024), "iso-8859-1").rstrip("\r\n")
-        print(start_line)
         # GET /path HTTP/1.1
         command, path, _ = start_line.split()
+        path = urllib.unquote(path) # Prevent wrong quote in Windowns
+        print(command, path, _)
+
         if path.startswith("//"):
             path = "/" + path.lstrip("/")
         if path.endswith("//"):
