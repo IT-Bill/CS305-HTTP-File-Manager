@@ -116,6 +116,9 @@ class HTTPRequestHandler:
                     else:
                         # breakpoint transmission
                         range_header = self._request.get_header('Range')
+                        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                        self._response.remove_header("Content-Length")  # !!!!!!
+                        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                         if range_header:
                             ranges = [tuple(map(int, r.split('-'))) for r in range_header[range_header.index('bytes=') + 6:].split(',')]
                             file_size = os.path.getsize(f.name)
@@ -135,7 +138,8 @@ class HTTPRequestHandler:
                                     self.wfile.write('\r\n')
                                 self.wfile.write(f'--{boundary}--\r\n')
                             else:
-                                self._response.status_code = 416  # Range Not Satisfiable
+                                # Range Not Satisfiable
+                                self._response.set_status_line(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
                                 self._response.write_headers()
                         else:
                             self._response.write_headers()
@@ -508,7 +512,8 @@ class _SocketWriter(io.BufferedIOBase):
 
     def write(self, b):
         if isinstance(b, str):
-            b = b.encode("utf-8")
+            print("str to byte")
+            b = b.encode()
 
         self._sock.sendall(b)
         with memoryview(b) as view:
