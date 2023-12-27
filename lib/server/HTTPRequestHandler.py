@@ -53,6 +53,7 @@ class HTTPRequestHandler:
         # GET /path HTTP/1.1
         command, path, _ = start_line.split()
         path = urllib.parse.unquote(path) # Prevent wrong quote in Windowns
+        path = path.replace("\\", "/")
         print(command, path, _)
 
         if path.startswith("//"):
