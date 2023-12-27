@@ -21,6 +21,7 @@ class HTTPRequestHandler:
 
         self.use_cookie = False
 
+        self.rfile = self.request.makefile("rb", -1)
         self.setup()
 
         try:
@@ -32,7 +33,6 @@ class HTTPRequestHandler:
 
     def setup(self):
         """Setup the request socket"""
-        self.rfile = self.request.makefile("rb", -1)
         self.wfile = _SocketWriter(self.request)
 
         self._request = Request()
@@ -50,12 +50,13 @@ class HTTPRequestHandler:
     def handle_one_request(self):
         """Handle a single HTTP request"""
         # `readline` is used to read one line of request message
-        start_line = str(self.rfile.readline(10240), "iso-8859-1").rstrip("\r\n")
-        # GET /path HTTP/1.1
-        words = start_line.split()
-        if len(words) != 3:
+        start_line = str(self.rfile.readline(65537), "iso-8859-1").rstrip("\r\n")
+        if not start_line:
+            print("Empty command line")
             self.close_connection = True
             return
+        
+        # GET /path HTTP/1.1
         command, path, _ = start_line.split()
         path = urllib.parse.unquote(path) # Prevent wrong quote in Windowns
         path = path.replace("\\", "/")
@@ -78,6 +79,10 @@ class HTTPRequestHandler:
         method()
         # actually send the response
         self.wfile.flush()
+
+        conn = self._request.get_header("Connection")
+        if conn and conn == "close":
+            self.close_connection = True
 
     def send_chunked_response(self, f):
         """Send data in chunks for chunked transfer encoding."""
@@ -123,9 +128,10 @@ class HTTPRequestHandler:
                                 for range_start, range_end in ranges:
                                     f.seek(range_start)
                                     self.wfile.write(f'--{boundary}\r\n')
-                                    self.wfile.write(f'Content-Type: {mimetypes.guess_type(f.name)}\r\n')
+                                    self.wfile.write(f'Content-Type: {mimetypes.guess_type(f.name)[0]}\r\n')
                                     self.wfile.write(f'Content-Range: bytes {range_start}-{range_end}/{file_size}\r\n\r\n')
-                                    shutil.copyfileobj(f, self.wfile, range_end - range_start + 1)
+                                    # shutil.copyfileobj(f, self.wfile, range_end - range_start + 1)
+                                    self.wfile.write(f.read(range_end - range_start + 1))
                                     self.wfile.write('\r\n')
                                 self.wfile.write(f'--{boundary}--\r\n')
                             else:
@@ -486,13 +492,13 @@ class HTTPRequestHandler:
 
     def finish(self):
         """ """
-        pass
 
 
 class _SocketWriter(io.BufferedIOBase):
-    """Simple writable BufferedIOBase implementation for a socket
-
-    Does not hold data in a buffer, avoiding any need to call flush()."""
+    """
+    Simple writable BufferedIOBase implementation for a socket
+    Does not hold data in a buffer, avoiding any need to call flush().
+    """
 
     def __init__(self, sock):
         self._sock = sock
@@ -506,6 +512,7 @@ class _SocketWriter(io.BufferedIOBase):
 
         self._sock.sendall(b)
         with memoryview(b) as view:
+            print(len(b))
             return view.nbytes
 
     def fileno(self):
