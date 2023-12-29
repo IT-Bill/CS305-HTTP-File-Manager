@@ -9,9 +9,11 @@ import os, io, sys, shutil
 import uuid
 import traceback
 
+ST = "SUSTech-HTTP"
+
 
 class HTTPRequestHandler:
-    NO_NEED_AUTH_PATH = ["/favicon.ico", "/get_public_key"]
+    NO_NEED_AUTH_PATH = ["/favicon.ico", "/get_public_key", "/login.html", "/login"]
 
     def __init__(self, request, client_address, server):
         self.request = request
@@ -61,10 +63,10 @@ class HTTPRequestHandler:
             print("Empty command line")
             self.close_connection = True
             return
-        
+
         # GET /path HTTP/1.1
         command, path, _ = start_line.split()
-        path = urllib.parse.unquote(path) # Prevent wrong quote in Windowns
+        path = urllib.parse.unquote(path)  # Prevent wrong quote in Windowns
         path = path.replace("\\", "/")
         print(command, path, _)
 
@@ -121,31 +123,51 @@ class HTTPRequestHandler:
                         self.send_chunked_response(f)
                     else:
                         # breakpoint transmission
-                        range_header = self._request.get_header('Range')
+                        range_header = self._request.get_header("Range")
                         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                         self._response.remove_header("Content-Length")  # !!!!!!
                         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                         if range_header:
-                            ranges = [tuple(map(int, r.split('-'))) for r in range_header[range_header.index('bytes=') + 6:].split(',')]
+                            ranges = [
+                                tuple(map(int, r.split("-")))
+                                for r in range_header[
+                                    range_header.index("bytes=") + 6 :
+                                ].split(",")
+                            ]
                             file_size = os.path.getsize(f.name)
-                            if all(0 <= start <= end < file_size for start, end in ranges):
-                                boundary = '3d6b6a416f9b5'
-                                self._response.add_header('Content-Type', f'multipart/byteranges; boundary={boundary}')
+                            if all(
+                                0 <= start <= end < file_size for start, end in ranges
+                            ):
+                                boundary = "3d6b6a416f9b5"
+                                self._response.add_header(
+                                    "Content-Type",
+                                    f"multipart/byteranges; boundary={boundary}",
+                                )
                                 # Partial Content
-                                self._response.set_status_line(HTTPStatus.PARTIAL_CONTENT) 
+                                self._response.set_status_line(
+                                    HTTPStatus.PARTIAL_CONTENT
+                                )
                                 self._response.write_headers()
                                 for range_start, range_end in ranges:
                                     f.seek(range_start)
-                                    self.wfile.write(f'--{boundary}\r\n')
-                                    self.wfile.write(f'Content-Type: {mimetypes.guess_type(f.name)[0]}\r\n')
-                                    self.wfile.write(f'Content-Range: bytes {range_start}-{range_end}/{file_size}\r\n\r\n')
+                                    self.wfile.write(f"--{boundary}\r\n")
+                                    self.wfile.write(
+                                        f"Content-Type: {mimetypes.guess_type(f.name)[0]}\r\n"
+                                    )
+                                    self.wfile.write(
+                                        f"Content-Range: bytes {range_start}-{range_end}/{file_size}\r\n\r\n"
+                                    )
                                     # shutil.copyfileobj(f, self.wfile, range_end - range_start + 1)
-                                    self.wfile.write(f.read(range_end - range_start + 1))
-                                    self.wfile.write('\r\n')
-                                self.wfile.write(f'--{boundary}--\r\n')
+                                    self.wfile.write(
+                                        f.read(range_end - range_start + 1)
+                                    )
+                                    self.wfile.write("\r\n")
+                                self.wfile.write(f"--{boundary}--\r\n")
                             else:
                                 # Range Not Satisfiable
-                                self._response.set_status_line(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                                self._response.set_status_line(
+                                    HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE
+                                )
                                 self._response.write_headers()
                         else:
                             self._response.write_headers()
@@ -165,6 +187,7 @@ class HTTPRequestHandler:
 
     def do_HEAD(self):
         """Serve a HEAD request"""
+
         f = self.send_head()
         if f:
             f.close()
@@ -265,11 +288,9 @@ class HTTPRequestHandler:
         if self._request.cmd == "GET":
             # check SUSTech-HTTP query
             # not dir
-            if (
-                os.path.isfile(self.path2local(self._request.path))
-                or self._request.query.get("SUSTech-HTTP")
-                and self._request.query["SUSTech-HTTP"] in (["0"], ["1"])
-            ):
+            if os.path.isfile(self.path2local(self._request.path)) \
+                or self._request.query.get(ST) \
+                and self._request.query[ST] in (["0"], ["1"]):
                 return False  # correct
 
         elif self._request.cmd == "POST":
@@ -351,7 +372,7 @@ class HTTPRequestHandler:
                 self.redirect(
                     utils.join_path_query(
                         os.path.join(self._request.auth.username, ""),
-                        {"SUSTech-HTTP": "0"},
+                        {ST: "0"},
                     )
                 )
                 return True
@@ -397,7 +418,7 @@ class HTTPRequestHandler:
             return None
 
         # already pass the query checking
-        mode = self._request.query["SUSTech-HTTP"][0]
+        mode = self._request.query[ST][0]
         list.sort(key=lambda a: a.lower())
         enc = sys.getfilesystemencoding()
 
@@ -530,7 +551,6 @@ class _SocketWriter(io.BufferedIOBase):
 
         self._sock.sendall(b)
         with memoryview(b) as view:
-            print(len(b))
             return view.nbytes
 
     def fileno(self):

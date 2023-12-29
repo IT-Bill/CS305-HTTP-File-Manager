@@ -70,6 +70,8 @@ def parse_url(url):
     parts = urllib.parse.urlsplit(url)
     path = parts.path
     query = urllib.parse.parse_qs(parts.query)
+    if query.get("SUSTech-HTTP") == None:
+        query["SUSTech-HTTP"] = ["0"]
     return path, query
 
 
