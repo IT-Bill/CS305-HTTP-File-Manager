@@ -99,10 +99,12 @@ class HTTPRequestHandler:
 
     def do_GET(self):
         """Serve a GET request"""
-        if self._request.path != "/favicon.ico" and (
+        if self._request.path != "/favicon.ico" and self._request.path != "/login.html" and self._request.path != "/login" and (
             self.is_unauthorized() or self.is_forbidden() or self.is_bad_request()
         ):
             return
+        elif self._request.path in ["/login.html", "/login"]:
+            self.serve_html_file('lib/templates/login.html')
         else:
             f = self.send_head()
             if f:
@@ -147,8 +149,76 @@ class HTTPRequestHandler:
                 finally:
                     f.close()
 
+    def handle_post_request(self):
+        # 此方法应在接收到 POST 请求时被调用
+        # 获取内容长度
+        #AttributeError: 'socket' object has no attribute 'headers'
+
+        content_length = int(self._request.get_header('Content-Length'))
+
+        # 读取 payload
+        payload = self.rfile.read(content_length).decode('utf-8')
+
+        # 处理 payload
+        # 例如，可以解析为 key-value 形式，或处理 JSON 数据等
+        # 这里的处理方式取决于 payload 的具体格式和您的需求
+
+        # 示例：打印 payload
+        return payload
+
+        # 根据需要添加其他处理逻辑
+        # ...
+
+# 在处理请求的地方调用 handle_post_request
+# 例如，在某个方法中根据请求类型来决定调用哪个处理方法
+# if request.method == 'POST':
+#     handler.handle_post_request()
+
+    def serve_html_file(self, file_name):
+        """Serve a html file"""
+        path = os.path.join(os.getcwd(), file_name)
+        if not os.path.isfile(path):
+            self.response_error(HTTPStatus.NOT_FOUND)
+            return
+        try:
+            f = open(path, "rb")
+            self._response.set_status_line(HTTPStatus.OK)
+            self._response.add_header("Content-type", "text/html")
+            self._response.add_header("Content-Length", os.path.getsize(path))
+            self._response.write_headers()
+            shutil.copyfileobj(f, self.wfile)
+        except OSError:
+            self.response_error(HTTPStatus.INTERNAL_SERVER_ERROR)
+
     def do_POST(self):
         """Serve a POST request"""
+        if self._request.path in ["/login", "/login.html"]:
+            #从payload中获取用户名和密码
+            payload = self.handle_post_request()
+            #按照&分割
+            payload = payload.split('&')
+            username = payload[0].split('=')[1]
+            password = payload[1].split('=')[1]
+            # print(password)
+            #验证用户名和密码
+            if self.is_unauthorized(username, password):
+                #给浏览器弹窗
+                self.serve_html_file('lib/templates/login.html')
+            else:
+                #重定向到主页
+                print(self._request.auth.username)
+                self.redirect(
+                    utils.join_path_query(
+                        os.path.join("/", self._request.auth.username, ""),
+                        {"SUSTech-HTTP": "1"},
+                    )
+                )
+            return
+
+            # username = payload.get("username")
+            # print(username)
+            # password = payload.get("password")
+            # print(password)
         if self.is_unauthorized() or self.is_bad_request() or self.is_forbidden():
             return
 
@@ -279,17 +349,27 @@ class HTTPRequestHandler:
         self.response_error(HTTPStatus.BAD_REQUEST)
         return True
 
-    def is_unauthorized(self):
+    def is_unauthorized(self,username=None,password=None):
         """
         Varify the authorization.
         """
-
         def set_unauthorized_response():
             self._response.set_status_line(HTTPStatus.UNAUTHORIZED)
             self._response.add_header("WWW-Authenticate", 'Basic realm="Test"')
             self._response.add_header("Content-type", "text\html")
             self._response.write_headers()
             self.close_connection = True
+        if username != None and password != None:
+            auth = BasicAuth(username,password)
+            if auth and auth.valid:
+                self._request.auth = auth
+                self._response.add_header(
+                    "Set-Cookie", str(CookieJar.generate_cookie(auth.username))
+                )
+                return False
+            else:
+                return True
+
 
         # if self.use_cookie:
         #     cookie = CookieJar.from_cookie_header(self._request.get_header("Cookie"))
@@ -317,6 +397,8 @@ class HTTPRequestHandler:
         set_unauthorized_response()
         return True
 
+
+
     def is_forbidden(self):
         """
         Check whether the path is forbidden.
@@ -338,7 +420,7 @@ class HTTPRequestHandler:
                 self.redirect(
                     utils.join_path_query(
                         os.path.join(self._request.auth.username, ""),
-                        {"SUSTech-HTTP": "0"},
+                        {"SUSTech-HTTP": "1"},
                     )
                 )
                 return True
@@ -362,8 +444,9 @@ class HTTPRequestHandler:
         self.response_error(HTTPStatus.FORBIDDEN)
         return True
 
-    def redirect(self, new_url, status=HTTPStatus.TEMPORARY_REDIRECT):
+    def redirect(self, new_url, status=HTTPStatus.SEE_OTHER):
         """Redirect to new url."""
+        #让浏览器从response里面，得到下次发get请求、访问的url
         self._response.set_status_line(status)
         self._response.add_header("Location", new_url)
         self._response.add_header("Content-Length", "0")
@@ -388,7 +471,7 @@ class HTTPRequestHandler:
         list.sort(key=lambda a: a.lower())
         enc = sys.getfilesystemencoding()
 
-        if mode == "0":
+        if mode == "":
             display_list = []
             for name in list:
                 fullname = os.path.join(path, name)
@@ -517,7 +600,6 @@ class _SocketWriter(io.BufferedIOBase):
 
         self._sock.sendall(b)
         with memoryview(b) as view:
-            print(len(b))
             return view.nbytes
 
     def fileno(self):
