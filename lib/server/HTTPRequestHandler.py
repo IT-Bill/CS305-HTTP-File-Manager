@@ -48,7 +48,7 @@ class HTTPRequestHandler:
 
     def handle(self):
         """Handle the http request"""
-        self.close_connection = False
+        self.close_connection = True
 
         self.handle_one_request()
         while not self.close_connection:
@@ -89,8 +89,11 @@ class HTTPRequestHandler:
         self.wfile.flush()
 
         conn = self._request.get_header("Connection")
-        if conn and conn == "close":
-            self.close_connection = True
+        if conn:
+            if conn.lower() == "close":
+                self.close_connection = True
+            elif conn.lower() == "keep-alive":
+                self.close_connection = False
 
     def send_chunked_response(self, f):
         """Send data in chunks for chunked transfer encoding."""
@@ -107,75 +110,76 @@ class HTTPRequestHandler:
 
     def do_GET(self):
         """Serve a GET request"""
-        if (self._request.path not in HTTPRequestHandler.NO_NEED_AUTH_PATH) and (
-            self.is_unauthorized() or self.is_forbidden() or self.is_bad_request()
-        ):
-            return
-        else:
-            f = self.send_head()
-            if f:
-                try:
-                    # chunked transfer
-                    if self._request.query.get("chunked") == ["1"]:
-                        self._response.add_header("Transfer-Encoding", "chunked")
-                        self._response.remove_header("Content-Length")
-                        self._response.write_headers()
-                        self.send_chunked_response(f)
-                    else:
-                        # breakpoint transmission
-                        range_header = self._request.get_header("Range")
-                        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                        self._response.remove_header("Content-Length")  # !!!!!!
-                        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                        if range_header:
-                            ranges = [
-                                tuple(map(int, r.split("-")))
-                                for r in range_header[
-                                    range_header.index("bytes=") + 6 :
-                                ].split(",")
-                            ]
-                            file_size = os.path.getsize(f.name)
-                            if all(
-                                0 <= start <= end < file_size for start, end in ranges
-                            ):
-                                boundary = "3d6b6a416f9b5"
-                                self._response.add_header(
-                                    "Content-Type",
-                                    f"multipart/byteranges; boundary={boundary}",
-                                )
-                                # Partial Content
-                                self._response.set_status_line(
-                                    HTTPStatus.PARTIAL_CONTENT
-                                )
-                                self._response.write_headers()
-                                for range_start, range_end in ranges:
-                                    f.seek(range_start)
-                                    self.wfile.write(f"--{boundary}\r\n")
-                                    self.wfile.write(
-                                        f"Content-Type: {mimetypes.guess_type(f.name)[0]}\r\n"
-                                    )
-                                    self.wfile.write(
-                                        f"Content-Range: bytes {range_start}-{range_end}/{file_size}\r\n\r\n"
-                                    )
-                                    # shutil.copyfileobj(f, self.wfile, range_end - range_start + 1)
-                                    self.wfile.write(
-                                        f.read(range_end - range_start + 1)
-                                    )
-                                    self.wfile.write("\r\n")
-                                self.wfile.write(f"--{boundary}--\r\n")
-                            else:
-                                # Range Not Satisfiable
-                                self._response.set_status_line(
-                                    HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE
-                                )
-                                self._response.write_headers()
-                        else:
+        f = self.send_head()
+        if f:
+            try:
+                # chunked transfer
+                if self._request.query.get("chunked") == ["1"]:
+                    self._response.add_header("Transfer-Encoding", "chunked")
+                    self._response.remove_header("Content-Length")
+                    self._response.write_headers()
+                    self.send_chunked_response(f)
+                else:
+                    # breakpoint transmission
+                    range_header = self._request.get_header("Range")
+                    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                    self._response.remove_header("Content-Length")  # !!!!!!
+                    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                    if range_header:
+                        ranges = [
+                            tuple(map(int, r.split("-")))
+                            for r in range_header[
+                                range_header.index("bytes=") + 6 :
+                            ].split(",")
+                        ]
+                        file_size = os.path.getsize(f.name)
+                        if all(
+                            0 <= start <= end < file_size for start, end in ranges
+                        ):
+                            boundary = "3d6b6a416f9b5"
+                            self._response.add_header(
+                                "Content-Type",
+                                f"multipart/byteranges; boundary={boundary}",
+                            )
+                            # Partial Content
+                            self._response.set_status_line(
+                                HTTPStatus.PARTIAL_CONTENT
+                            )
                             self._response.write_headers()
-                            shutil.copyfileobj(f, self.wfile)
-                finally:
-                    f.close()
+                            for range_start, range_end in ranges:
+                                f.seek(range_start)
+                                self.wfile.write(f"--{boundary}\r\n")
+                                self.wfile.write(
+                                    f"Content-Type: {mimetypes.guess_type(f.name)[0]}\r\n"
+                                )
+                                self.wfile.write(
+                                    f"Content-Range: bytes {range_start}-{range_end}/{file_size}\r\n\r\n"
+                                )
+                                # shutil.copyfileobj(f, self.wfile, range_end - range_start + 1)
+                                self.wfile.write(
+                                    f.read(range_end - range_start + 1)
+                                )
+                                self.wfile.write("\r\n")
+                            self.wfile.write(f"--{boundary}--\r\n")
+                        else:
+                            # Range Not Satisfiable
+                            self._response.set_status_line(
+                                HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE
+                            )
+                            self._response.write_headers()
+                    else:
+                        self._response.write_headers()
+                        shutil.copyfileobj(f, self.wfile)
+            finally:
+                f.close()
 
     def do_POST(self):
+        if self._request.path == "/":
+            if not self.is_unauthorized():
+                self._response.set_status_line(HTTPStatus.OK)
+                self._response.write_headers()
+                return None
+
         """Serve a POST request"""
         if self.is_unauthorized() or self.is_bad_request() or self.is_forbidden():
             return
@@ -187,12 +191,22 @@ class HTTPRequestHandler:
 
     def do_HEAD(self):
         """Serve a HEAD request"""
-
         f = self.send_head()
         if f:
             f.close()
 
     def send_head(self):
+        if self._request.path == "/":
+            if not self.is_unauthorized():
+                self._response.set_status_line(HTTPStatus.OK)
+                self._response.write_headers()
+            return None
+
+        if (self._request.path not in HTTPRequestHandler.NO_NEED_AUTH_PATH) and (
+            self.is_unauthorized() or self.is_forbidden() or self.is_bad_request()
+        ):
+            return None
+
         path = self.path2local(self._request.path)
         f = None
         if os.path.isdir(path):
@@ -325,15 +339,10 @@ class HTTPRequestHandler:
             self._response.write_headers()
             self.close_connection = True
 
-        # if self.use_cookie:
-        #     cookie = CookieJar.from_cookie_header(self._request.get_header("Cookie"))
-        #     if cookie and cookie.valid:
-        #         self._request.cookie = cookie
-        #         return False
-
-        #     self.use_cookie = False
-        #     set_unauthorized_response()
-        #     return True
+        cookie = CookieJar.from_cookie_header(self._request.get_header("Cookie"))
+        if cookie and cookie.valid:
+            self._request.cookie = cookie
+            return False
 
         auth = BasicAuth.from_auth_header(self._request.get_header("authorization"))
         if auth and auth.valid:
@@ -342,9 +351,6 @@ class HTTPRequestHandler:
                 "Set-Cookie", str(CookieJar.generate_cookie(auth.username))
             )
 
-            # TODO: redirect when different user logins
-
-            # self.use_cookie = True
             return False
 
         # send UNAUTHORIZED header
@@ -356,7 +362,8 @@ class HTTPRequestHandler:
         Check whether the path is forbidden.
 
         Redirect if user visites the root.
-        """
+        """        
+
         if self._request.cmd == "GET":
             segments = [
                 seg
@@ -369,6 +376,7 @@ class HTTPRequestHandler:
             ]
             if len(segments) == 0:
                 # Visit the root directory of data, redirect.
+                # ! Comment only for script
                 self.redirect(
                     utils.join_path_query(
                         os.path.join(self._request.auth.username, ""),
@@ -546,7 +554,6 @@ class _SocketWriter(io.BufferedIOBase):
 
     def write(self, b):
         if isinstance(b, str):
-            print("str to byte")
             b = b.encode()
 
         self._sock.sendall(b)
