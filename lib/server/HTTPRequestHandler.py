@@ -488,15 +488,138 @@ class HTTPRequestHandler:
             r = []
             displaypath = utils.html_escape(self._request.simple_path, quote=False)
             title = "Directory listing for %s" % displaypath
-            r.append("<!DOCTYPE>")
+            r.append("<!DOCTYPE html>")
             r.append("<html>\n<head>")
             r.append(
                 '<meta http-equiv="Content-Type" '
                 'content="text/html; charset=%s">' % enc
             )
             r.append("<title>%s</title>\n</head>" % title)
-            r.append("<body>\n<h1>%s</h1>" % title)
-            r.append("<hr>\n<ul>")
+            r.append("<style>")
+            r.append("""
+                html, body {
+                    height: 100%;
+                    margin: 0;
+                    padding: 0;
+                    font-family: Arial, sans-serif;
+                }
+                body {
+                    background-image: url('background.jpg'); /* 替换为您的背景图片 URL */
+                    background-size: cover; /* 背景图片覆盖整个元素区域 */
+                    background-position: center; /* 背景图片居中 */
+                    background-attachment: fixed; /* 背景图片固定，不随内容滚动 */
+                    background-repeat: no-repeat; /* 背景图片不重复 */
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    color: white; /* 根据您的背景颜色调整文字颜色 */
+                }
+                .container {
+                    width: 80%;
+                    background: rgba(0, 0, 0, 0.8); /* 半透明黑色背景 */
+                    padding: 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+                    z-index: 2; /* 确保内容在背景之上 */
+                }
+                h1 {
+                    text-align: center;
+                    font-size: 2em;
+                }
+                ul {
+                    list-style-type: none;
+                    padding: 0;
+                }
+                li {
+                    padding: 8px 15px;
+                    border-bottom: 1px solid #ddd;
+                }
+                li a {
+                    text-decoration: none;
+                    color: #ffffff;
+                    display: block;
+                }
+                li a:hover {
+                    background-color: #f8f8f8;
+                    color: black;
+                }
+                hr {
+                    border: none;
+                    background-color: #ddd;
+                    height: 1px;
+                }
+            """)
+            r.append("<style>")
+            r.append("""
+                body {
+                    font-family: Arial, sans-serif;
+                    background-color: #f4f4f4;
+                    margin: 0;
+                    padding: 0;
+                    color: #333;
+                }
+                .header {
+                    text-align: center;
+                    padding: 20px;
+                    font-size: 3em; /* 增大字体大小 */
+                    color: red;
+                    width: 100%;
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* 更现代的字体 */
+                    font-weight: bold; /* 字体加粗 */
+                    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5); /* 添加字体阴影 */
+                }
+
+
+                .directory-listing {
+                    width: 80%;
+                    margin: 20px auto;
+                    padding: 20px;
+                    background: white;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+                }
+                h1 {
+                    color: #4CAF50;
+                    margin-bottom: 10px;
+                }
+                ul {
+                    list-style-type: none;
+                    padding: 0;
+                }
+                li {
+                    padding: 10px;
+                    border-bottom: 1px solid #ddd;
+                    line-height: 1.6;
+                    font-size: 16px;
+                }
+                li a {
+                    text-decoration: none;
+                    color: #333;
+                    display: flex;
+                    align-items: center;
+                }
+                li a:hover {
+                    color: #4CAF50;
+                }
+                li a:before {
+                    content: '📁'; /* Folder icon */
+                    margin-right: 10px;
+                }
+                .file a:before {
+                    content: '📄'; /* File icon */
+                }
+            """)
+            r.append("</style>")
+            r.append("<body>")
+            r.append("<div class='header'>HTTP FILE MANAGER</div>")
+            r.append("<div class='directory-listing'>\n<h1>%s</h1>" % title)
+            r.append("<ul>")
+            # r.append("</style>")
+            # r.append("<body>\n<h1>%s</h1>" % title)
+            # r.append("<hr>\n<ul>")
 
             # add user root directory
             r.append(
@@ -540,14 +663,14 @@ class HTTPRequestHandler:
             r.append("</ul>\n<hr>\n</body>\n</html>\n")
             encoded = "\n".join(r).encode(enc)
 
-        f = io.BytesIO()
-        f.write(encoded)
-        f.seek(0)
-        self._response.set_status_line(HTTPStatus.OK)
-        self._response.add_header("Content-type", "text/html; charset=%s" % enc)
-        self._response.add_header("Content-Length", str(len(encoded)))
-        # self._response.write_headers()
-        return f
+            f = io.BytesIO()
+            f.write(encoded)
+            f.seek(0)
+            self._response.set_status_line(HTTPStatus.OK)
+            self._response.add_header("Content-type", "text/html; charset=%s" % enc)
+            self._response.add_header("Content-Length", str(len(encoded)))
+            # self._response.write_headers()
+            return f
 
     def path2local(self, path):
         """
