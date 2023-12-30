@@ -99,12 +99,14 @@ class HTTPRequestHandler:
 
     def do_GET(self):
         """Serve a GET request"""
-        if self._request.path != "/favicon.ico" and self._request.path != "/login.html" and self._request.path != "/login" and (
+        if self._request.path != "/favicon.ico" and self._request.path!="/background.jpg" and self._request.path != "/login.html" and self._request.path != "/login" and (
             self.is_unauthorized() or self.is_forbidden() or self.is_bad_request()
         ):
             return
         elif self._request.path in ["/login.html", "/login"]:
             self.serve_html_file('lib/templates/login.html')
+        elif self._request.path == "/background.jpg":
+            self.serve_html_file('lib/templates/background.jpg')
         else:
             f = self.send_head()
             if f:
