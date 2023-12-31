@@ -495,6 +495,7 @@ class HTTPRequestHandler:
                 'content="text/html; charset=%s">' % enc
             )
             r.append("<title>%s</title>\n</head>" % title)
+            # 添加样式
             r.append("<style>")
             r.append("""
                 html, body {
@@ -516,15 +517,25 @@ class HTTPRequestHandler:
                 }
                 .container {
                     width: 80%;
-                    background: rgba(0, 0, 0, 0.8); /* 半透明黑色背景 */
+                    background: rgba(0, 0, 0, 0.8);
                     padding: 20px;
                     border-radius: 10px;
                     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-                    z-index: 2; /* 确保内容在背景之上 */
+                    z-index: 2;
+                }
+                .header {
+                    text-align: center;
+                    padding: 20px;
+                    font-size: 3em;
+                    color: red;
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    font-weight: bold;
+                    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
                 }
                 h1 {
                     text-align: center;
                     font-size: 2em;
+                    color: #4CAF50;
                 }
                 ul {
                     list-style-type: none;
@@ -549,77 +560,96 @@ class HTTPRequestHandler:
                     height: 1px;
                 }
             """)
-            r.append("<style>")
-            r.append("""
-                body {
-                    font-family: Arial, sans-serif;
-                    background-color: #f4f4f4;
-                    margin: 0;
-                    padding: 0;
-                    color: #333;
-                }
-                .header {
-                    text-align: center;
-                    padding: 20px;
-                    font-size: 3em; /* 增大字体大小 */
-                    color: red;
-                    width: 100%;
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* 更现代的字体 */
-                    font-weight: bold; /* 字体加粗 */
-                    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5); /* 添加字体阴影 */
-                }
-
-
-                .directory-listing {
-                    width: 80%;
-                    margin: 20px auto;
-                    padding: 20px;
-                    background: white;
-                    border-radius: 10px;
-                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-                }
-                h1 {
-                    color: #4CAF50;
-                    margin-bottom: 10px;
-                }
-                ul {
-                    list-style-type: none;
-                    padding: 0;
-                }
-                li {
-                    padding: 10px;
-                    border-bottom: 1px solid #ddd;
-                    line-height: 1.6;
-                    font-size: 16px;
-                }
-                li a {
-                    text-decoration: none;
-                    color: #333;
-                    display: flex;
-                    align-items: center;
-                }
-                li a:hover {
-                    color: #4CAF50;
-                }
-                li a:before {
-                    content: '📁'; /* Folder icon */
-                    margin-right: 10px;
-                }
-                .file a:before {
-                    content: '📄'; /* File icon */
-                }
-            """)
             r.append("</style>")
+
+            # function handleDelete(filename) {
+            #         var form = document.createElement('form');
+            #         form.action = 'http://127.0.0.1:8080/delete?path=@#￥%…………&'+ filename;
+            #         form.method = 'post';
+            #
+            #         var input = document.createElement('input');
+            #         input.type = 'hidden';
+            #         input.name = 'filename';
+            #         input.value = filename;
+            #
+            #         form.appendChild(input);
+            #         document.body.appendChild(form);
+            #         form.submit();
+            #     }
+            #
+            # function handleUpload() {
+            #         var form = document.createElement('form');
+            #         form.action = 'http://127.0.0.1:8080/upload?path=@#￥%…………&';
+            #         form.method = 'post';
+            #         form.enctype = 'multipart/form-data';
+            #
+            #         var input = document.createElement('input');
+            #         input.type = 'file';
+            #         input.name = 'fileToUpload';
+            #         input.onchange = function() {
+            #             form.appendChild(input);
+            #             document.body.appendChild(form);
+            #             form.submit();
+            #         }
+            #         input.click();
+            #     }
+            # 添加脚本
+            r.append("<script>")
+            r.append("""
+                function handleDelete(filename) {
+    fetch('http://127.0.0.1:8080/delete?path=@#￥%…………&' + filename, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+            .then(response => {
+              // Handle the response as needed
+              // For example, you can check if the response indicates successful deletion
+
+              // Reload the page after deletion
+              window.location.reload();
+            })
+            .catch(error => {
+              // Handle errors if needed
+              console.error('Error deleting file:', error);
+            });
+                    }
+                    
+  function uploadFile() {
+            var fileInput = document.getElementById('fileInput');
+            var file = fileInput.files[0];
+            var formData = new FormData();
+            formData.append('file', file);
+
+            fetch('http://127.0.0.1:8080/upload?path=@#￥%…………&', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.text())
+            .then(data => {
+                console.log(data);
+                alert('文件上传成功');
+                window.location.reload(); // 刷新页面
+            })
+            .catch(error => {
+                console.error('文件上传失败:', error);
+                alert('文件上传失败');
+            });
+        }
+                
+            """.replace("@#￥%…………&",displaypath))
+            r.append("</script>")
+            r.append("</head>")
+
+            # 主体内容
             r.append("<body>")
             r.append("<div class='header'>HTTP FILE MANAGER</div>")
-            r.append("<div class='directory-listing'>\n<h1>%s</h1>" % title)
+            r.append("<div class='container'>")
+            r.append('<input type="file" id="fileInput" '+"/><button onclick='uploadFile()'>Upload File</button>")
+            r.append("<h1>%s</h1>" % title)
             r.append("<ul>")
-            # r.append("</style>")
-            # r.append("<body>\n<h1>%s</h1>" % title)
-            # r.append("<hr>\n<ul>")
+
 
             # add user root directory
             r.append(
@@ -644,6 +674,7 @@ class HTTPRequestHandler:
                 )
             )
             for name in list:
+                # print(name)
                 fullname = os.path.join(path, name)
                 displayname = linkname = name
                 if os.path.isdir(fullname):
@@ -659,10 +690,13 @@ class HTTPRequestHandler:
                     '<li><a href="%s">%s</a></li>'
                     % (linkname, utils.html_escape(displayname, quote=False))
                 )
-
+                # print(displayname)
+                # 在每个列表项中添加删除按钮
+                r.append('<button onclick="handleDelete(\'%s\')">Delete</button>' % displayname)
+            # 结束页面内容
             r.append("</ul>\n<hr>\n</body>\n</html>\n")
             encoded = "\n".join(r).encode(enc)
-
+            # 创建和返回响应
             f = io.BytesIO()
             f.write(encoded)
             f.seek(0)
