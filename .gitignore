@@ -1,3 +1,4 @@
+# Remove self-test file
 test*.py
 
 # For VSCode

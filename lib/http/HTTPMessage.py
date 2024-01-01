@@ -3,10 +3,12 @@ from lib import utils
 
 
 def parse_headers(fp):
+    """ Parse the header except to a dict """
     headers = {}
 
     while True:
         line = fp.readline(1024)
+        # Header will end with \r\n
         if line in (b'\r\n', b'\n', b''):
             break
         
@@ -18,7 +20,7 @@ def parse_headers(fp):
 
 
 class Request:
-    """  """
+    """ Request from client """
 
     def __init__(self):
         self.cmd = None
@@ -33,7 +35,7 @@ class Request:
         return self.headers.get(k.lower())
 
 class Response:
-    """  """
+    """ Response to client """
     HTTP_VERSION = "HTTP/1.1"
 
     def __init__(self, stream=None):
@@ -54,25 +56,26 @@ class Response:
         self.add_header("Date", utils.formatdate(usegmt=True))
     
     def add_header(self, k, v):
-        self.headers[k] = v
+        self.headers[k.lower()] = v
 
     def remove_header(self, k):
-        return self.headers.pop(k, None)
+        return self.headers.pop(k.lower(), None)
 
     def header_encode(self, header):
         return header.encode("latin-1", "strict")
     
     def error(self, status, msg=None):
         self.set_status_line(status, msg)
-        self.add_header("Connection", "close")
+        # self.add_header("Connection", "close") # TODO: default to close
+        self.add_header("Content-Length", 0)
         self.write_headers()
     
     
     def write_headers(self):
+        """ Write header to buffer """
         buffer = [("%s %d %s\r\n" % (Response.HTTP_VERSION, self.status, self.msg))] + \
             [("%s: %s\r\n" % (k, v)) for k, v in self.headers.items()] + \
             ["\r\n"]
         self.stream.write(b"".join(map(self.header_encode, buffer)))
         
         self.headers.clear()
-    

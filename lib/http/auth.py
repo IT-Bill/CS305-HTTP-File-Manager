@@ -1,5 +1,5 @@
 from base64 import b64encode, b64decode
-
+from lib.config import USER_INFO
 
 def _basic_auth_str(username, password):
     """Return a Basic Auth string."""
@@ -14,8 +14,6 @@ def _basic_auth_str(username, password):
     return authstr
 
 class BasicAuth:
-    _info = [("111", ""), ("222", ""), ("333", ""), ("client1", "123")]
-
     def __init__(self, username, password):
         self.username = username
         self.password = password
@@ -40,4 +38,7 @@ class BasicAuth:
     
     @property
     def valid(self):
-        return (self.username, self.password) in BasicAuth._info
+        return USER_INFO.get(self.username) == self.password
+
+
+
