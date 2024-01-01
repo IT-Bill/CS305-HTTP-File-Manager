@@ -23,7 +23,7 @@ __all__ = [
     "decrypt_msg_with_private_key",
     "symmetric_encrypt_msg",
     "symmetric_decrypt_msg",
-    "decrypt_symmetric_key"
+    "decrypt_symmetric_key",
     "decrypt_msg",
     "encrypt_msg_with_public_key"
 
