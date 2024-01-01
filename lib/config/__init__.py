@@ -11,3 +11,7 @@ USER_INFO = {
     "client2": "",
     "client3": "",
 }
+
+# If the server not receives any request during `CONNECTION_TIMEOUT` seconds from some threads
+# the server will close these threads.
+CONNECTION_TIMEOUT = 20

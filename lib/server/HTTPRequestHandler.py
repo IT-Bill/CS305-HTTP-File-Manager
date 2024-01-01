@@ -7,7 +7,7 @@ from lib.utils.logger import logger
 import urllib, pathlib, posixpath, mimetypes, threading
 import os, io, sys, shutil, time, math
 import traceback, select
-from lib.config import ST
+from lib.config import ST, CONNECTION_TIMEOUT
 from cryptography.hazmat.primitives import hashes, serialization
 
 
@@ -39,8 +39,8 @@ class HTTPRequestHandler:
 
         try:
             self.handle()
-        except:
-            traceback.print_exc()
+        except Exception as e:
+            logger.warning(e)
         finally:
             self.finish()
 
@@ -65,7 +65,7 @@ class HTTPRequestHandler:
     def handle_one_request(self):
         """Handle a single HTTP request"""
         # `readline` is used to read one line of request message
-        ready_to_read, _, _ = select.select([self.request], [], [], 5)
+        ready_to_read, _, _ = select.select([self.request], [], [], CONNECTION_TIMEOUT)
         if ready_to_read:
             start_line = str(self.rfile.readline(65537), "iso-8859-1").rstrip("\r\n")
         else:
