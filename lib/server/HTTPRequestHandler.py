@@ -3,11 +3,12 @@ from lib import utils
 from lib.http.HTTPMessage import Response, Request
 from lib.http.cookiejar import CookieJar
 from lib.http.auth import BasicAuth
-
+import time
 import urllib, pathlib, posixpath, mimetypes, threading
 import os, io, sys, shutil
 import uuid
 import traceback, select
+import math
 
 ST = "SUSTech-HTTP"
 
@@ -418,6 +419,7 @@ class HTTPRequestHandler:
         self.response_error(HTTPStatus.BAD_REQUEST)
         return True
 
+
     def is_unauthorized(self, username=None, password=None):
         """
         Varify the authorization.
@@ -509,6 +511,15 @@ class HTTPRequestHandler:
         self._response.add_header("Location", new_url)
         self._response.add_header("Content-Length", "0")
         self._response.write_headers()
+
+    def convert_size(self,size_bytes):
+        if size_bytes == 0:
+            return "0B"
+        size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
+        i = int(math.floor(math.log(size_bytes, 1024)))
+        p = math.pow(1024, i)
+        s = round(size_bytes / p)
+        return "%s %s" % (s, size_name[i])
 
     def list_directory(self, path):
         """Helper to produce a directory listing (absent index.html).
@@ -707,6 +718,9 @@ class HTTPRequestHandler:
             for name in list:
                 # print(name)
                 fullname = os.path.join(path, name)
+                file_size_bytes = os.path.getsize(fullname)
+                file_size_formatted = self.convert_size(file_size_bytes)
+                modification_time = time.ctime(os.path.getmtime(fullname))
                 displayname = linkname = name
                 if os.path.isdir(fullname):
                     displayname = name + "/"
@@ -718,8 +732,8 @@ class HTTPRequestHandler:
                     linkname = urllib.parse.quote(name)
 
                 r.append(
-                    '<li><a href="%s">%s</a></li>'
-                    % (linkname, utils.html_escape(displayname, quote=False))
+                    '<li><a href="%s">%s</a> - Size: %s, Last Modified: %s</li>'
+                    % (linkname, utils.html_escape(displayname, quote=False), file_size_formatted, modification_time)
                 )
                 # print(displayname)
                 # 在每个列表项中添加删除按钮
