@@ -7,10 +7,8 @@ from lib.utils.logger import logger
 import urllib, pathlib, posixpath, mimetypes, threading
 import os, io, sys, shutil, time, math
 import traceback, select
-
+from lib.config import ST
 from cryptography.hazmat.primitives import hashes, serialization
-
-ST = "SUSTech-HTTP"
 
 
 class HTTPRequestHandler:

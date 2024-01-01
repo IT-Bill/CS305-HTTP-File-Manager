@@ -6,6 +6,7 @@ from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from cryptography.hazmat.primitives.asymmetric.padding import OAEP, MGF1
 from cryptography.hazmat.primitives import serialization
 from cryptography.fernet import Fernet
+from .logger import logger
 
 __all__ = [
     "formatdate",
@@ -161,9 +162,16 @@ def parse_multipart(data, boundary):
     parts = data.split(('--' + boundary).encode())
     # Skip the first part, as it's empty, and the last part, as it's the closing boundary
     for part in parts[1:-1]:
-        # Split each part into headers and body
-        part = part.strip(b'\r\n')  # Strip any leading/trailing newlines
-        headers_raw, body = part.split(b'\r\n\r\n', 1)
+        # Strip any leading/trailing newlines
+        part = part.strip(b'\r\n')
+        # Check if part contains both headers and body
+        if b'\r\n\r\n' in part:
+            headers_raw, body = part.split(b'\r\n\r\n', 1)
+        else:
+            # Handle the case where there is no body
+            headers_raw = part
+            body = b''
+
         headers = {}
         for header in headers_raw.split(b'\r\n'):
             # Check if the header actually contains a colon
@@ -171,10 +179,11 @@ def parse_multipart(data, boundary):
                 key, value = header.decode().split(':', 1)
                 headers[key.strip().lower()] = value.strip()
             else:
-                # Handle the case where no colon is present
-                # Perhaps log this case as it's likely to be a malformed header
+                # Log malformed header
                 print("Malformed header: No colon found in", header.decode())
+
         yield headers, body.rstrip(b'\r\n')
+
 
 
 # ----------------------- Server -------------------------

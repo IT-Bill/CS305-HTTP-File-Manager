@@ -1,28 +1,13 @@
 # CS305-HTTP-File-Manager
 
-## TODO List
+## Bonus
+### Breakpoint Transmition
+![Alt text](images/bkt.png)
 
-### Pending Bug Fix
-- [ ] The server needs to close connection otherwise it will be blocked.
+### Encryption
+![Alt text](images/encryption_client.png)
+![Alt text](images/encryption_server.png)
 
-### Basic HTTP Server
-- [x] Persistent connection
-- [x] Support many clients simultaneously
-- [x] Authorization
-
-### View and Download
-- [x] Directory viewer
-- [x] Click to download
-
-### Upload and Delete
-- [x] Upload
-- [x] Delete
-
-### Cookies and Session
-- [x] Cookies and Session
-
-### Chunked transfer
-- [x] Chunked transfer
-
-### Bonus Part
-
+### Directory Viewer UI
+![Alt text](images/ui1.png)
+![Alt text](images/ui2.png)
