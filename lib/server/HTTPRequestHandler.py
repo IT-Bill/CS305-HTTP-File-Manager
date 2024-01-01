@@ -65,8 +65,6 @@ class HTTPRequestHandler:
             self.handle_one_request()
 
 
-
-
     def handle_one_request(self):
         """Handle a single HTTP request"""
         # `readline` is used to read one line of request message
@@ -262,7 +260,7 @@ class HTTPRequestHandler:
                 self.redirect(
                     utils.join_path_query(
                         os.path.join("/", self._request.auth.username, ""),
-                        {"SUSTech-HTTP": "1"},
+                        {ST: "0"},
                     )
                 )
             return
