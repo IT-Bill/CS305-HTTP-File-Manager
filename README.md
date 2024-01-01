@@ -1,5 +1,7 @@
 # CS305-HTTP-File-Manager
 
+[Github Repository](https://github.com/ITBillZ/CS305-HTTP-File-Manager)
+
 ## Group Members
 - 12110817 张展玮
 - 12110813 刘圣鼎
