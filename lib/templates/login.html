@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login - HTTP File Manager</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-image: url('background.jpg'); /* 替换为您的背景图片 URL */
+            background-size: cover;
+            background-position: center;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            color: white; /* 根据您的背景颜色调整文字颜色 */
+        }
+
+        .container {
+            text-align: center;
+            background: rgba(0, 0, 0, 0.7); /* 半透明黑色背景 */
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        h1 {
+            margin-bottom: 20px;
+        }
+
+        form {
+            margin-top: 20px;
+        }
+
+        label {
+            font-size: 14px;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0;
+            display: inline-block;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+            border-radius: 4px;
+            background: white;
+        }
+
+        input[type="submit"] {
+            background-color: #4CAF50;
+            color: white;
+            padding: 14px 20px;
+            margin: 8px 0;
+            border: none;
+            cursor: pointer;
+            width: 100%;
+            border-radius: 4px;
+        }
+
+        input[type="submit"]:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>HTTP FILE MANAGER</h1>
+        <form action="/login" method="post">
+            <label for="username">Username:</label><br>
+            <input type="text" id="username" name="username"><br>
+            <label for="password">Password:</label><br>
+            <input type="password" id="password" name="password"><br><br>
+            <input type="submit" value="Submit">
+        </form>
+    </div>
+</body>
+</html>

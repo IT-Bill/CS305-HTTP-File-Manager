@@ -110,6 +110,57 @@ class HTTPRequestHandler:
 
     def do_GET(self):
         """Serve a GET request"""
+        if self._request.path != "/favicon.ico" and self._request.path!="/background.jpg" and self._request.path != "/login.html" and self._request.path != "/login" and (
+            self.is_unauthorized() or self.is_forbidden() or self.is_bad_request()
+        ):
+            return
+        elif self._request.path in ["/login.html", "/login"]:
+            self.serve_html_file('lib/templates/login.html')
+        elif self._request.path == "/background.jpg":
+            self.serve_html_file('lib/templates/background.jpg')
+        else:
+            f = self.send_head()
+            if f:
+                try:
+                    # chunked transfer
+                    if self._request.query.get("chunked") == ["1"]:
+                        self._response.add_header("Transfer-Encoding", "chunked")
+                        self._response.remove_header("Content-Length")
+                        self._response.write_headers()
+                        self.send_chunked_response(f)
+                    else:
+                        # breakpoint transmission
+                        range_header = self._request.get_header('Range')
+                        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                        self._response.remove_header("Content-Length")  # !!!!!!
+                        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                        if range_header:
+                            ranges = [tuple(map(int, r.split('-'))) for r in range_header[range_header.index('bytes=') + 6:].split(',')]
+                            file_size = os.path.getsize(f.name)
+                            if all(0 <= start <= end < file_size for start, end in ranges):
+                                boundary = '3d6b6a416f9b5'
+                                self._response.add_header('Content-Type', f'multipart/byteranges; boundary={boundary}')
+                                # Partial Content
+                                self._response.set_status_line(HTTPStatus.PARTIAL_CONTENT) 
+                                self._response.write_headers()
+                                for range_start, range_end in ranges:
+                                    f.seek(range_start)
+                                    self.wfile.write(f'--{boundary}\r\n')
+                                    self.wfile.write(f'Content-Type: {mimetypes.guess_type(f.name)[0]}\r\n')
+                                    self.wfile.write(f'Content-Range: bytes {range_start}-{range_end}/{file_size}\r\n\r\n')
+                                    # shutil.copyfileobj(f, self.wfile, range_end - range_start + 1)
+                                    self.wfile.write(f.read(range_end - range_start + 1))
+                                    self.wfile.write('\r\n')
+                                self.wfile.write(f'--{boundary}--\r\n')
+                            else:
+                                # Range Not Satisfiable
+                                self._response.set_status_line(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                                self._response.write_headers()
+                        else:
+                            self._response.write_headers()
+                            shutil.copyfileobj(f, self.wfile)
+                finally:
+                    f.close()
         f = self.send_head()
         if f:
             try:
@@ -173,6 +224,47 @@ class HTTPRequestHandler:
             finally:
                 f.close()
 
+    def handle_post_request(self):
+        # 此方法应在接收到 POST 请求时被调用
+        # 获取内容长度
+        #AttributeError: 'socket' object has no attribute 'headers'
+
+        content_length = int(self._request.get_header('Content-Length'))
+
+        # 读取 payload
+        payload = self.rfile.read(content_length).decode('utf-8')
+
+        # 处理 payload
+        # 例如，可以解析为 key-value 形式，或处理 JSON 数据等
+        # 这里的处理方式取决于 payload 的具体格式和您的需求
+
+        # 示例：打印 payload
+        return payload
+
+        # 根据需要添加其他处理逻辑
+        # ...
+
+# 在处理请求的地方调用 handle_post_request
+# 例如，在某个方法中根据请求类型来决定调用哪个处理方法
+# if request.method == 'POST':
+#     handler.handle_post_request()
+
+    def serve_html_file(self, file_name):
+        """Serve a html file"""
+        path = os.path.join(os.getcwd(), file_name)
+        if not os.path.isfile(path):
+            self.response_error(HTTPStatus.NOT_FOUND)
+            return
+        try:
+            f = open(path, "rb")
+            self._response.set_status_line(HTTPStatus.OK)
+            self._response.add_header("Content-type", "text/html")
+            self._response.add_header("Content-Length", os.path.getsize(path))
+            self._response.write_headers()
+            shutil.copyfileobj(f, self.wfile)
+        except OSError:
+            self.response_error(HTTPStatus.INTERNAL_SERVER_ERROR)
+
     def do_POST(self):
         if self._request.path == "/":
             if not self.is_unauthorized():
@@ -181,6 +273,33 @@ class HTTPRequestHandler:
                 return None
 
         """Serve a POST request"""
+        if self._request.path in ["/login", "/login.html"]:
+            #从payload中获取用户名和密码
+            payload = self.handle_post_request()
+            #按照&分割
+            payload = payload.split('&')
+            username = payload[0].split('=')[1]
+            password = payload[1].split('=')[1]
+            # print(password)
+            #验证用户名和密码
+            if self.is_unauthorized(username, password):
+                #给浏览器弹窗
+                self.serve_html_file('lib/templates/login.html')
+            else:
+                #重定向到主页
+                print(self._request.auth.username)
+                self.redirect(
+                    utils.join_path_query(
+                        os.path.join("/", self._request.auth.username, ""),
+                        {"SUSTech-HTTP": "1"},
+                    )
+                )
+            return
+
+            # username = payload.get("username")
+            # print(username)
+            # password = payload.get("password")
+            # print(password)
         if self.is_unauthorized() or self.is_bad_request() or self.is_forbidden():
             return
 
@@ -327,17 +446,28 @@ class HTTPRequestHandler:
         self.response_error(HTTPStatus.BAD_REQUEST)
         return True
 
-    def is_unauthorized(self):
+    def is_unauthorized(self,username=None,password=None):
         """
         Varify the authorization.
         """
-
         def set_unauthorized_response():
             self._response.set_status_line(HTTPStatus.UNAUTHORIZED)
             self._response.add_header("WWW-Authenticate", 'Basic realm="Test"')
             self._response.add_header("Content-type", "text\html")
             self._response.write_headers()
             self.close_connection = True
+
+        if username != None and password != None:
+            auth = BasicAuth(username,password)
+            if auth and auth.valid:
+                self._request.auth = auth
+                self._response.add_header(
+                    "Set-Cookie", str(CookieJar.generate_cookie(auth.username))
+                )
+                return False
+            else:
+                return True
+
 
         cookie = CookieJar.from_cookie_header(self._request.get_header("Cookie"))
         if cookie and cookie.valid:
@@ -356,6 +486,8 @@ class HTTPRequestHandler:
         # send UNAUTHORIZED header
         set_unauthorized_response()
         return True
+
+
 
     def is_forbidden(self):
         """
@@ -404,8 +536,9 @@ class HTTPRequestHandler:
         self.response_error(HTTPStatus.FORBIDDEN)
         return True
 
-    def redirect(self, new_url, status=HTTPStatus.TEMPORARY_REDIRECT):
+    def redirect(self, new_url, status=HTTPStatus.SEE_OTHER):
         """Redirect to new url."""
+        #让浏览器从response里面，得到下次发get请求、访问的url
         self._response.set_status_line(status)
         self._response.add_header("Location", new_url)
         self._response.add_header("Content-Length", "0")
@@ -430,7 +563,7 @@ class HTTPRequestHandler:
         list.sort(key=lambda a: a.lower())
         enc = sys.getfilesystemencoding()
 
-        if mode == "0":
+        if mode == "":
             display_list = []
             for name in list:
                 fullname = os.path.join(path, name)
@@ -445,15 +578,168 @@ class HTTPRequestHandler:
             r = []
             displaypath = utils.html_escape(self._request.simple_path, quote=False)
             title = "Directory listing for %s" % displaypath
-            r.append("<!DOCTYPE>")
+            r.append("<!DOCTYPE html>")
             r.append("<html>\n<head>")
             r.append(
                 '<meta http-equiv="Content-Type" '
                 'content="text/html; charset=%s">' % enc
             )
             r.append("<title>%s</title>\n</head>" % title)
-            r.append("<body>\n<h1>%s</h1>" % title)
-            r.append("<hr>\n<ul>")
+            # 添加样式
+            r.append("<style>")
+            r.append("""
+                html, body {
+                    height: 100%;
+                    margin: 0;
+                    padding: 0;
+                    font-family: Arial, sans-serif;
+                }
+                body {
+                    background-image: url('background.jpg'); /* 替换为您的背景图片 URL */
+                    background-size: cover; /* 背景图片覆盖整个元素区域 */
+                    background-position: center; /* 背景图片居中 */
+                    background-attachment: fixed; /* 背景图片固定，不随内容滚动 */
+                    background-repeat: no-repeat; /* 背景图片不重复 */
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    color: white; /* 根据您的背景颜色调整文字颜色 */
+                }
+                .container {
+                    width: 80%;
+                    background: rgba(0, 0, 0, 0.8);
+                    padding: 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+                    z-index: 2;
+                }
+                .header {
+                    text-align: center;
+                    padding: 20px;
+                    font-size: 3em;
+                    color: red;
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    font-weight: bold;
+                    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+                }
+                h1 {
+                    text-align: center;
+                    font-size: 2em;
+                    color: #4CAF50;
+                }
+                ul {
+                    list-style-type: none;
+                    padding: 0;
+                }
+                li {
+                    padding: 8px 15px;
+                    border-bottom: 1px solid #ddd;
+                }
+                li a {
+                    text-decoration: none;
+                    color: #ffffff;
+                    display: block;
+                }
+                li a:hover {
+                    background-color: #f8f8f8;
+                    color: black;
+                }
+                hr {
+                    border: none;
+                    background-color: #ddd;
+                    height: 1px;
+                }
+            """)
+            r.append("</style>")
+
+            # function handleDelete(filename) {
+            #         var form = document.createElement('form');
+            #         form.action = 'http://127.0.0.1:8080/delete?path=@#￥%…………&'+ filename;
+            #         form.method = 'post';
+            #
+            #         var input = document.createElement('input');
+            #         input.type = 'hidden';
+            #         input.name = 'filename';
+            #         input.value = filename;
+            #
+            #         form.appendChild(input);
+            #         document.body.appendChild(form);
+            #         form.submit();
+            #     }
+            #
+            # function handleUpload() {
+            #         var form = document.createElement('form');
+            #         form.action = 'http://127.0.0.1:8080/upload?path=@#￥%…………&';
+            #         form.method = 'post';
+            #         form.enctype = 'multipart/form-data';
+            #
+            #         var input = document.createElement('input');
+            #         input.type = 'file';
+            #         input.name = 'fileToUpload';
+            #         input.onchange = function() {
+            #             form.appendChild(input);
+            #             document.body.appendChild(form);
+            #             form.submit();
+            #         }
+            #         input.click();
+            #     }
+            # 添加脚本
+            r.append("<script>")
+            r.append("""
+                function handleDelete(filename) {
+    fetch('http://127.0.0.1:8080/delete?path=@#￥%…………&' + filename, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+            .then(response => {
+              // Handle the response as needed
+              // For example, you can check if the response indicates successful deletion
+
+              // Reload the page after deletion
+              window.location.reload();
+            })
+            .catch(error => {
+              // Handle errors if needed
+              console.error('Error deleting file:', error);
+            });
+                    }
+                    
+  function uploadFile() {
+            var fileInput = document.getElementById('fileInput');
+            var file = fileInput.files[0];
+            var formData = new FormData();
+            formData.append('file', file);
+
+            fetch('http://127.0.0.1:8080/upload?path=@#￥%…………&', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.text())
+            .then(data => {
+                console.log(data);
+                alert('文件上传成功');
+                window.location.reload(); // 刷新页面
+            })
+            .catch(error => {
+                console.error('文件上传失败:', error);
+                alert('文件上传失败');
+            });
+        }
+                
+            """.replace("@#￥%…………&",displaypath))
+            r.append("</script>")
+            r.append("</head>")
+
+            # 主体内容
+            r.append("<body>")
+            r.append("<div class='header'>HTTP FILE MANAGER</div>")
+            r.append("<div class='container'>")
+            r.append('<input type="file" id="fileInput" '+"/><button onclick='uploadFile()'>Upload File</button>")
+            r.append("<h1>%s</h1>" % title)
+            r.append("<ul>")
+
 
             # add user root directory
             r.append(
@@ -478,6 +764,7 @@ class HTTPRequestHandler:
                 )
             )
             for name in list:
+                # print(name)
                 fullname = os.path.join(path, name)
                 displayname = linkname = name
                 if os.path.isdir(fullname):
@@ -493,18 +780,21 @@ class HTTPRequestHandler:
                     '<li><a href="%s">%s</a></li>'
                     % (linkname, utils.html_escape(displayname, quote=False))
                 )
-
+                # print(displayname)
+                # 在每个列表项中添加删除按钮
+                r.append('<button onclick="handleDelete(\'%s\')">Delete</button>' % displayname)
+            # 结束页面内容
             r.append("</ul>\n<hr>\n</body>\n</html>\n")
             encoded = "\n".join(r).encode(enc)
-
-        f = io.BytesIO()
-        f.write(encoded)
-        f.seek(0)
-        self._response.set_status_line(HTTPStatus.OK)
-        self._response.add_header("Content-type", "text/html; charset=%s" % enc)
-        self._response.add_header("Content-Length", str(len(encoded)))
-        # self._response.write_headers()
-        return f
+            # 创建和返回响应
+            f = io.BytesIO()
+            f.write(encoded)
+            f.seek(0)
+            self._response.set_status_line(HTTPStatus.OK)
+            self._response.add_header("Content-type", "text/html; charset=%s" % enc)
+            self._response.add_header("Content-Length", str(len(encoded)))
+            # self._response.write_headers()
+            return f
 
     def path2local(self, path):
         """

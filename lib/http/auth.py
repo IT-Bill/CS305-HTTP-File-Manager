@@ -42,3 +42,6 @@ class BasicAuth:
     @property
     def valid(self):
         return (self.username, self.password) in BasicAuth._info
+
+
+
