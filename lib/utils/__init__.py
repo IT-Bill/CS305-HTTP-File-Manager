@@ -13,6 +13,20 @@ __all__ = [
     "get_filename_from_content_disposition",
     "join_path_query",
     "html_escape",
+    "parse_content_disposition",
+    "get_boundary",
+    "parse_multipart",
+    "generate_rsa_keys",
+    "encrypt_message",
+    "generate_symmetric_key",
+    "encrypt_msg_with_public_key",
+    "decrypt_msg_with_private_key",
+    "symmetric_encrypt_msg",
+    "symmetric_decrypt_msg",
+    "decrypt_symmetric_key"
+    "decrypt_msg",
+    "encrypt_msg_with_public_key"
+
 ]
 
 
@@ -202,11 +216,9 @@ def decrypt_msg_with_private_key(encrypted_msg, private_key):
     )
     return decrypted_msg
 
-
 def symmetric_encrypt_msg(msg, key):
     f = Fernet(key)
     return f.encrypt(msg)
-
 
 def symmetric_decrypt_msg(encrypted_msg, key):
     f = Fernet(key)
@@ -246,6 +258,4 @@ def encrypt_msg_with_public_key(msg, public_key_pem):
     return encrypted_msg
 
 
-def symmetric_encrypt_msg(msg, key):
-    f = Fernet(key)
-    return f.encrypt(msg)
+

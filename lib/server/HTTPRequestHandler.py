@@ -3,11 +3,14 @@ from lib import utils
 from lib.http.HTTPMessage import Response, Request
 from lib.http.cookiejar import CookieJar
 from lib.http.auth import BasicAuth
+from lib.utils.logger import logger
 
 import urllib, pathlib, posixpath, mimetypes, threading
 import os, io, sys, shutil
 import uuid
 import traceback, select
+
+from cryptography.hazmat.primitives import hashes, serialization
 
 ST = "SUSTech-HTTP"
 
@@ -15,10 +18,12 @@ ST = "SUSTech-HTTP"
 class HTTPRequestHandler:
     NO_NEED_AUTH_PATH = [
         "/favicon.ico",
-        "/get_public_key",
         "/login.html",
         "/login",
         "/background.jpg",
+        "/public_key",
+        "/receive_symmetric_key",
+        "/encrypted_endpoint"
     ]
 
     def __init__(self, request, client_address, server):
@@ -28,8 +33,6 @@ class HTTPRequestHandler:
 
         # encryption
         self.private_key, self.public_key = utils.generate_rsa_keys()
-        self.symmetric_key = utils.generate_symmetric_key()
-        # self.encrypted_sym_key = utils.encrypt_msg_with_public_key()
 
         self.directory = os.path.join(os.getcwd(), "data")
 
@@ -59,8 +62,6 @@ class HTTPRequestHandler:
 
         self.handle_one_request()
         while not self.close_connection:
-
-            print(threading.current_thread().getName())
             self.setup()
             self.handle_one_request()
 
@@ -72,13 +73,13 @@ class HTTPRequestHandler:
         if ready_to_read:
             start_line = str(self.rfile.readline(65537), "iso-8859-1").rstrip("\r\n")
         else:
-            print("Timeout")
+            logger.warning("Connection %s timeout", threading.current_thread().getName())
             self.close_connection = True
             return
 
         parts = start_line.split()
         if len(parts) < 3:
-            print("Malformed request line")
+            logger.warning("Malformed request line: %s", start_line)
             self.close_connection = True
             return
         
@@ -107,7 +108,6 @@ class HTTPRequestHandler:
         self.wfile.flush()
 
         conn = self._request.get_header("Connection")
-        print(conn)
         if conn:
             if conn.lower() == "close":
                 self.close_connection = True
@@ -184,6 +184,14 @@ class HTTPRequestHandler:
             # Range Not Satisfiable
             self.response_error(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
             self._response.write_headers()
+    
+    def send_encryption_response(self, f):
+        # 假设所有内容已经用对称密钥加密
+        encrypted_content = utils.symmetric_encrypt_msg(f.read(), self.symmetric_key)
+        self._response.add_header("Content-type", "application/octet-stream")
+        self._response.set_status_line(HTTPStatus.OK)
+        self._response.write_headers()
+        self.wfile.write(encrypted_content)
 
     def do_GET(self):
         """Serve a GET request"""
@@ -195,6 +203,8 @@ class HTTPRequestHandler:
                     self.send_chunked_response(f)
                 elif self._request.get_header("Range"):
                     self.send_range_response(f)
+                elif self._request.get_header("encryption") == ["1"]:
+                    self.send_encryption_response(f)
                 else:
                     self._response.write_headers()
                     shutil.copyfileobj(f, self.wfile)
@@ -202,16 +212,13 @@ class HTTPRequestHandler:
                 f.close()
 
     def handle_post_request(self):
-        # 此方法应在接收到 POST 请求时被调用
-        # 获取内容长度
-        # AttributeError: 'socket' object has no attribute 'headers'
-
-        content_length = int(self._request.get_header("Content-Length"))
-
-        # 读取 payload
-        payload = self.rfile.read(content_length).decode("utf-8")
-
-        return payload
+        """处理 POST 请求的数据"""
+        # 这里应该包含读取请求体的逻辑
+        # 如果数据是加密的，这里应该解密数据
+        # 返回解密后的数据或原始数据
+        length = int(self._request.get_header('content-length'))
+        data = self.rfile.read(length)
+        return data
 
     def serve_html_file(self, file_name):
         """Serve a html file"""
@@ -241,9 +248,48 @@ class HTTPRequestHandler:
             else:
                 return False
 
+    def handle_encrypted_endpoint(self):
+        # 从请求中读取加密数据
+        encrypted_data = self.handle_post_request()
+
+        # 使用对称密钥解密数据
+        try:
+            if self.symmetric_key:
+                decrypted_data = utils.symmetric_decrypt_msg(encrypted_data, self.symmetric_key)
+                # 根据业务需求处理解密后的数据
+                # 例如，这里可以根据解密后的数据执行特定操作
+                print(decrypted_data)
+
+                # 准备响应数据
+                response_data = b"Response to encrypted request"
+                encrypted_response_data = utils.symmetric_encrypt_msg(response_data, self.symmetric_key)
+
+                # 发送加密的响应
+                self._response.set_status_line(HTTPStatus.OK)
+                self._response.add_header("Content-type", "application/octet-stream")
+                self._response.add_header("Content-Length", str(len(encrypted_response_data)))
+                self._response.write_headers()
+                self.wfile.write(encrypted_response_data)
+            else:
+                self.response_error(HTTPStatus.INTERNAL_SERVER_ERROR, "Symmetric key not set")
+
+        except Exception as e:
+            print("Failed to decrypt/encrypt message:", e)
+            self.response_error(HTTPStatus.INTERNAL_SERVER_ERROR)
+
     def do_POST(self):
         """Serve a POST request"""
-        if self._request.path in ["/login", "/login.html"]:
+        # 处理加密密钥接收
+        if self._request.path == "/receive_symmetric_key":
+            encrypted_key = self.handle_post_request()
+            self.receive_and_decrypt_symmetric_key(encrypted_key)
+            return
+        
+        elif self._request.path == "/encrypted_endpoint":
+            self.handle_encrypted_endpoint()
+            return
+
+        elif self._request.path in ["/login", "/login.html"]:
             # 从payload中获取用户名和密码
             payload = self.handle_post_request()
             # 按照&分割
@@ -285,6 +331,30 @@ class HTTPRequestHandler:
         if f:
             f.close()
 
+    def send_public_key(self):
+        # 假设 self.public_key 已经在服务器启动时生成
+        public_key_pem = self.public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+        self._response.set_status_line(HTTPStatus.OK)
+        self._response.add_header("Content-Type", "application/x-pem-file")
+        self._response.add_header("Content-Length", str(len(public_key_pem)))
+        self._response.write_headers()
+        self.wfile.write(public_key_pem)
+
+    def receive_and_decrypt_symmetric_key(self, encrypted_key):
+        # 解密由客户端发送的加密的对称密钥
+        try:
+            decrypted_key = utils.decrypt_msg_with_private_key(encrypted_key, self.private_key)
+            self.symmetric_key = decrypted_key
+            self._response.set_status_line(HTTPStatus.OK)
+            self._response.add_header("Content-Length", 0)
+            self._response.write_headers()
+        except Exception as e:
+            print("Failed to decrypt symmetric key:", e)
+            self.response_error(HTTPStatus.BAD_REQUEST)
+
     def send_head(self):
         if self._request.path not in HTTPRequestHandler.NO_NEED_AUTH_PATH and (
             self.is_unauthorized() or self.is_forbidden() or self.is_bad_request()
@@ -295,6 +365,9 @@ class HTTPRequestHandler:
             return None
         elif self._request.path == "/background.jpg":
             self.serve_html_file("lib/templates/background.jpg")
+            return None
+        elif self._request.path == "/public_key":
+            self.send_public_key()
             return None
 
         path = self.path2local(self._request.path)
@@ -426,10 +499,9 @@ class HTTPRequestHandler:
         def set_unauthorized_response():
             self._response.set_status_line(HTTPStatus.UNAUTHORIZED)
             self._response.add_header("WWW-Authenticate", 'Basic realm="Test"')
-            self._response.add_header("Content-type", "text\html")
             self._response.add_header("Content-Length", 0)
             self._response.write_headers()
-            self.close_connection = True
+            self.close_connection = False
 
         if username != None and password != None:
             auth = BasicAuth(username, password)
