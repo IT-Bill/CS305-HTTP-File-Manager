@@ -289,7 +289,7 @@ class HTTPRequestHandler:
 
         elif self._request.path in ["/login", "/login.html"]:
             # 从payload中获取用户名和密码
-            payload = self.handle_post_request()
+            payload = self.handle_post_request().decode()
             # 按照&分割
             payload = payload.split("&")
             username = payload[0].split("=")[1]
