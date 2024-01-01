@@ -1,5 +1,10 @@
 # CS305-HTTP-File-Manager
 
+## Group Members
+- 12110817 张展玮
+- 12110813 刘圣鼎
+- 12112729 杨烜
+
 ## Bonus
 ### Breakpoint Transmition
 ![Alt text](images/bkt.png)
