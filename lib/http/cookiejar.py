@@ -1,5 +1,6 @@
 import uuid
 import time
+from .auth import BasicAuth
 
 class CookieJar:
     DEFAULT_COOKIE_NAME = "session-id"

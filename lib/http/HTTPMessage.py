@@ -66,7 +66,8 @@ class Response:
     
     def error(self, status, msg=None):
         self.set_status_line(status, msg)
-        self.add_header("Connection", "close") # TODO: default to close
+        # self.add_header("Connection", "close") # TODO: default to close
+        self.add_header("Content-Length", 0)
         self.write_headers()
     
     
@@ -78,4 +79,3 @@ class Response:
         self.stream.write(b"".join(map(self.header_encode, buffer)))
         
         self.headers.clear()
-    

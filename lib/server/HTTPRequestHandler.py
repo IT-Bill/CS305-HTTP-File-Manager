@@ -7,13 +7,19 @@ from lib.http.auth import BasicAuth
 import urllib, pathlib, posixpath, mimetypes, threading
 import os, io, sys, shutil
 import uuid
-import traceback
+import traceback, select
 
 ST = "SUSTech-HTTP"
 
 
 class HTTPRequestHandler:
-    NO_NEED_AUTH_PATH = ["/favicon.ico", "/get_public_key", "/login.html", "/login"]
+    NO_NEED_AUTH_PATH = [
+        "/favicon.ico",
+        "/get_public_key",
+        "/login.html",
+        "/login",
+        "/background.jpg",
+    ]
 
     def __init__(self, request, client_address, server):
         self.request = request
@@ -23,7 +29,7 @@ class HTTPRequestHandler:
         # encryption
         self.private_key, self.public_key = utils.generate_rsa_keys()
         self.symmetric_key = utils.generate_symmetric_key()
-        self.encrypted_sym_key = utils.encrypt_msg_with_public_key
+        # self.encrypted_sym_key = utils.encrypt_msg_with_public_key()
 
         self.directory = os.path.join(os.getcwd(), "data")
 
@@ -46,27 +52,41 @@ class HTTPRequestHandler:
         self._request = Request()
         self._response = Response(self.wfile)
 
+        self.close_connection = True
+
     def handle(self):
         """Handle the http request"""
-        self.close_connection = True
 
         self.handle_one_request()
         while not self.close_connection:
+
+            print(threading.current_thread().getName())
             self.setup()
             self.handle_one_request()
+
+
+
 
     def handle_one_request(self):
         """Handle a single HTTP request"""
         # `readline` is used to read one line of request message
-        start_line = str(self.rfile.readline(65537), "iso-8859-1").rstrip("\r\n")
-        if not start_line:
-            print("Empty command line")
+        ready_to_read, _, _ = select.select([self.request], [], [], 5)
+        if ready_to_read:
+            start_line = str(self.rfile.readline(65537), "iso-8859-1").rstrip("\r\n")
+        else:
+            print("Timeout")
             self.close_connection = True
             return
 
+        parts = start_line.split()
+        if len(parts) < 3:
+            print("Malformed request line")
+            self.close_connection = True
+            return
+        
         # GET /path HTTP/1.1
         command, path, _ = start_line.split()
-        path = urllib.parse.unquote(path)  # Prevent wrong quote in Windowns
+        path = urllib.parse.unquote(path)  # Prevent wrong quote in Windows
         path = path.replace("\\", "/")
         print(command, path, _)
 
@@ -89,14 +109,21 @@ class HTTPRequestHandler:
         self.wfile.flush()
 
         conn = self._request.get_header("Connection")
+        print(conn)
         if conn:
             if conn.lower() == "close":
                 self.close_connection = True
             elif conn.lower() == "keep-alive":
                 self.close_connection = False
+        else:
+            self.close_connection = True
 
     def send_chunked_response(self, f):
         """Send data in chunks for chunked transfer encoding."""
+        self._response.add_header("Transfer-Encoding", "chunked")
+        self._response.remove_header("Content-Length")
+        self._response.write_headers()
+        
         while True:
             chunk = f.read(8192)
             if not chunk:
@@ -107,147 +134,86 @@ class HTTPRequestHandler:
             self.wfile.write(b"\r\n")
 
         self.wfile.write(b"0\r\n\r\n")
+    
+    def send_range_response(self, f):
+        def write_chunk(data):
+            """Write a chunk of data for chunked transfer encoding."""
+            size = f'{len(data):X}\r\n'
+            self.wfile.write(size.encode())
+            self.wfile.write(data)
+            self.wfile.write(b'\r\n')
+                    
+        range_header = self._request.get_header("Range")
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        self._response.remove_header("Content-Length")  # !!!!!!
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        ranges = [
+            tuple(map(int, r.split("-")))
+            for r in range_header[range_header.index("bytes=") + 6 :].split(
+                ","
+            )
+        ]
+        file_size = os.path.getsize(f.name)
+        if all(0 <= start <= end < file_size for start, end in ranges):
+            boundary = "3d6b6a416f9b5"
+            self._response.add_header(
+                "Content-Type",
+                f"multipart/byteranges; boundary={boundary}",
+            )
+            self._response.add_header("Transfer-Encoding", "chunked") 
+
+            # Partial Content
+            self._response.set_status_line(HTTPStatus.PARTIAL_CONTENT)
+            self._response.write_headers()
+
+            for range_start, range_end in ranges:
+                f.seek(range_start)
+                chunk_header = f"--{boundary}\r\n"
+                chunk_header += f"Content-Type: {mimetypes.guess_type(f.name)[0]}\r\n"
+                chunk_header += f"Content-Range: bytes {range_start}-{range_end}/{file_size}\r\n\r\n"
+                write_chunk(chunk_header.encode())
+
+                chunk_data = f.read(range_end - range_start + 1)
+                write_chunk(chunk_data)
+                write_chunk(b'\r\n')
+
+            ending_boundary = f"--{boundary}--\r\n"
+            write_chunk(ending_boundary.encode())
+
+            # Send a zero-length chunk to indicate the end of the response
+            write_chunk(b'')
+        else:
+            # Range Not Satisfiable
+            self.response_error(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+            self._response.write_headers()
 
     def do_GET(self):
         """Serve a GET request"""
-        if self._request.path != "/favicon.ico" and self._request.path!="/background.jpg" and self._request.path != "/login.html" and self._request.path != "/login" and (
-            self.is_unauthorized() or self.is_forbidden() or self.is_bad_request()
-        ):
-            return
-        elif self._request.path in ["/login.html", "/login"]:
-            self.serve_html_file('lib/templates/login.html')
-        elif self._request.path == "/background.jpg":
-            self.serve_html_file('lib/templates/background.jpg')
-        else:
-            f = self.send_head()
-            if f:
-                try:
-                    # chunked transfer
-                    if self._request.query.get("chunked") == ["1"]:
-                        self._response.add_header("Transfer-Encoding", "chunked")
-                        self._response.remove_header("Content-Length")
-                        self._response.write_headers()
-                        self.send_chunked_response(f)
-                    else:
-                        # breakpoint transmission
-                        range_header = self._request.get_header('Range')
-                        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                        self._response.remove_header("Content-Length")  # !!!!!!
-                        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                        if range_header:
-                            ranges = [tuple(map(int, r.split('-'))) for r in range_header[range_header.index('bytes=') + 6:].split(',')]
-                            file_size = os.path.getsize(f.name)
-                            if all(0 <= start <= end < file_size for start, end in ranges):
-                                boundary = '3d6b6a416f9b5'
-                                self._response.add_header('Content-Type', f'multipart/byteranges; boundary={boundary}')
-                                # Partial Content
-                                self._response.set_status_line(HTTPStatus.PARTIAL_CONTENT) 
-                                self._response.write_headers()
-                                for range_start, range_end in ranges:
-                                    f.seek(range_start)
-                                    self.wfile.write(f'--{boundary}\r\n')
-                                    self.wfile.write(f'Content-Type: {mimetypes.guess_type(f.name)[0]}\r\n')
-                                    self.wfile.write(f'Content-Range: bytes {range_start}-{range_end}/{file_size}\r\n\r\n')
-                                    # shutil.copyfileobj(f, self.wfile, range_end - range_start + 1)
-                                    self.wfile.write(f.read(range_end - range_start + 1))
-                                    self.wfile.write('\r\n')
-                                self.wfile.write(f'--{boundary}--\r\n')
-                            else:
-                                # Range Not Satisfiable
-                                self._response.set_status_line(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
-                                self._response.write_headers()
-                        else:
-                            self._response.write_headers()
-                            shutil.copyfileobj(f, self.wfile)
-                finally:
-                    f.close()
         f = self.send_head()
         if f:
             try:
                 # chunked transfer
                 if self._request.query.get("chunked") == ["1"]:
-                    self._response.add_header("Transfer-Encoding", "chunked")
-                    self._response.remove_header("Content-Length")
-                    self._response.write_headers()
                     self.send_chunked_response(f)
+                elif self._request.get_header("Range"):
+                    self.send_range_response(f)
                 else:
-                    # breakpoint transmission
-                    range_header = self._request.get_header("Range")
-                    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                    self._response.remove_header("Content-Length")  # !!!!!!
-                    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                    if range_header:
-                        ranges = [
-                            tuple(map(int, r.split("-")))
-                            for r in range_header[
-                                range_header.index("bytes=") + 6 :
-                            ].split(",")
-                        ]
-                        file_size = os.path.getsize(f.name)
-                        if all(
-                            0 <= start <= end < file_size for start, end in ranges
-                        ):
-                            boundary = "3d6b6a416f9b5"
-                            self._response.add_header(
-                                "Content-Type",
-                                f"multipart/byteranges; boundary={boundary}",
-                            )
-                            # Partial Content
-                            self._response.set_status_line(
-                                HTTPStatus.PARTIAL_CONTENT
-                            )
-                            self._response.write_headers()
-                            for range_start, range_end in ranges:
-                                f.seek(range_start)
-                                self.wfile.write(f"--{boundary}\r\n")
-                                self.wfile.write(
-                                    f"Content-Type: {mimetypes.guess_type(f.name)[0]}\r\n"
-                                )
-                                self.wfile.write(
-                                    f"Content-Range: bytes {range_start}-{range_end}/{file_size}\r\n\r\n"
-                                )
-                                # shutil.copyfileobj(f, self.wfile, range_end - range_start + 1)
-                                self.wfile.write(
-                                    f.read(range_end - range_start + 1)
-                                )
-                                self.wfile.write("\r\n")
-                            self.wfile.write(f"--{boundary}--\r\n")
-                        else:
-                            # Range Not Satisfiable
-                            self._response.set_status_line(
-                                HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE
-                            )
-                            self._response.write_headers()
-                    else:
-                        self._response.write_headers()
-                        shutil.copyfileobj(f, self.wfile)
+                    self._response.write_headers()
+                    shutil.copyfileobj(f, self.wfile)
             finally:
                 f.close()
 
     def handle_post_request(self):
         # 此方法应在接收到 POST 请求时被调用
         # 获取内容长度
-        #AttributeError: 'socket' object has no attribute 'headers'
+        # AttributeError: 'socket' object has no attribute 'headers'
 
-        content_length = int(self._request.get_header('Content-Length'))
+        content_length = int(self._request.get_header("Content-Length"))
 
         # 读取 payload
-        payload = self.rfile.read(content_length).decode('utf-8')
+        payload = self.rfile.read(content_length).decode("utf-8")
 
-        # 处理 payload
-        # 例如，可以解析为 key-value 形式，或处理 JSON 数据等
-        # 这里的处理方式取决于 payload 的具体格式和您的需求
-
-        # 示例：打印 payload
         return payload
-
-        # 根据需要添加其他处理逻辑
-        # ...
-
-# 在处理请求的地方调用 handle_post_request
-# 例如，在某个方法中根据请求类型来决定调用哪个处理方法
-# if request.method == 'POST':
-#     handler.handle_post_request()
 
     def serve_html_file(self, file_name):
         """Serve a html file"""
@@ -265,29 +231,34 @@ class HTTPRequestHandler:
         except OSError:
             self.response_error(HTTPStatus.INTERNAL_SERVER_ERROR)
 
-    def do_POST(self):
-        if self._request.path == "/":
-            if not self.is_unauthorized():
-                self._response.set_status_line(HTTPStatus.OK)
+    def is_method_not_allowed(self):
+        if self._request.cmd in ["GET", "HEAD"]:
+            return False
+        elif self._request.cmd == "POST":
+            if self._request.simple_path not in ["/upload", "/delete"]:
+                self.response_error(HTTPStatus.METHOD_NOT_ALLOWED)
                 self._response.write_headers()
-                return None
+                return True
 
+            else:
+                return False
+
+    def do_POST(self):
         """Serve a POST request"""
         if self._request.path in ["/login", "/login.html"]:
-            #从payload中获取用户名和密码
+            # 从payload中获取用户名和密码
             payload = self.handle_post_request()
-            #按照&分割
-            payload = payload.split('&')
-            username = payload[0].split('=')[1]
-            password = payload[1].split('=')[1]
+            # 按照&分割
+            payload = payload.split("&")
+            username = payload[0].split("=")[1]
+            password = payload[1].split("=")[1]
             # print(password)
-            #验证用户名和密码
+            # 验证用户名和密码
             if self.is_unauthorized(username, password):
-                #给浏览器弹窗
-                self.serve_html_file('lib/templates/login.html')
+                # 给浏览器弹窗
+                self.serve_html_file("lib/templates/login.html")
             else:
-                #重定向到主页
-                print(self._request.auth.username)
+                # 重定向到主页
                 self.redirect(
                     utils.join_path_query(
                         os.path.join("/", self._request.auth.username, ""),
@@ -296,34 +267,36 @@ class HTTPRequestHandler:
                 )
             return
 
-            # username = payload.get("username")
-            # print(username)
-            # password = payload.get("password")
-            # print(password)
-        if self.is_unauthorized() or self.is_bad_request() or self.is_forbidden():
+        if (
+            self.is_unauthorized()
+            or self.is_method_not_allowed()
+            or self.is_bad_request()
+            or self.is_forbidden()
+        ):
             return
 
-        if self.post_cmd == "upload":
+        if self._request.simple_path == "/upload":
             self.upload()
-        elif self.post_cmd == "delete":
+        elif self._request.simple_path == "/delete":
             self.delete()
 
     def do_HEAD(self):
         """Serve a HEAD request"""
         f = self.send_head()
+        self._response.write_headers()
         if f:
             f.close()
 
     def send_head(self):
-        if self._request.path == "/":
-            if not self.is_unauthorized():
-                self._response.set_status_line(HTTPStatus.OK)
-                self._response.write_headers()
-            return None
-
-        if (self._request.path not in HTTPRequestHandler.NO_NEED_AUTH_PATH) and (
+        if self._request.path not in HTTPRequestHandler.NO_NEED_AUTH_PATH and (
             self.is_unauthorized() or self.is_forbidden() or self.is_bad_request()
         ):
+            return None
+        elif self._request.path in ["/login.html", "/login"]:
+            self.serve_html_file("lib/templates/login.html")
+            return None
+        elif self._request.path == "/background.jpg":
+            self.serve_html_file("lib/templates/background.jpg")
             return None
 
         path = self.path2local(self._request.path)
@@ -390,6 +363,7 @@ class HTTPRequestHandler:
         try:
             os.remove(path)
             self._response.set_status_line(HTTPStatus.OK)
+            self._response.add_header("Content-Length", 0)
             self._response.write_headers()
 
         except OSError:
@@ -403,62 +377,64 @@ class HTTPRequestHandler:
             self.response_error(HTTPStatus.NOT_FOUND)
             return
 
-        content_length = int(self._request.get_header("Content-Length"))
+        # process multipart
+        content_type = self._request.get_header('Content-Type')
+        boundary = utils.get_boundary(content_type)
+        if not boundary:
+            self.response_error(HTTPStatus.BAD_REQUEST)
+            return
+
+        content_length = int(self._request.get_header('Content-Length'))
         file_data = self.rfile.read(content_length)
-        file_name = utils.get_filename_from_content_disposition(
-            self._request.get_header("Content-Disposition")
-        )
-        if file_name is None:
-            file_name = str(uuid.uuid1())
-        file_path = os.path.join(path, file_name)
-        with open(file_path, "wb") as file:
-            file.write(file_data)
+
+        for headers, body in utils.parse_multipart(file_data, boundary):
+            disposition, disp_params = utils.parse_content_disposition(headers.get('content-disposition', ''))
+            if disposition == 'form-data' and 'filename' in disp_params:
+                file_name = disp_params['filename']
+                file_path = os.path.join(path, file_name)
+                with open(file_path, 'wb') as file:
+                    file.write(body)
 
         self._response.set_status_line(HTTPStatus.OK)
+        self._response.add_header("Content-Length", 0)
         self._response.write_headers()
 
     def is_bad_request(self):
-        if self._request.cmd == "GET":
+        if self._request.cmd in ["GET", "HEAD"]:
             # check SUSTech-HTTP query
             # not dir
-            if os.path.isfile(self.path2local(self._request.path)) \
-                or self._request.query.get(ST) \
-                and self._request.query[ST] in (["0"], ["1"]):
+            if (
+                os.path.isfile(self.path2local(self._request.path))
+                or self._request.query.get(ST)
+                and self._request.query[ST] in (["0"], ["1"])
+            ):
                 return False  # correct
 
         elif self._request.cmd == "POST":
-            segments = [
-                seg
-                for seg in posixpath.normpath(
-                    urllib.parse.unquote(self._request.simple_path)
-                ).split("/")
-                if seg
-            ]
-            if len(segments) == 1 and segments[0] in ["upload", "delete"]:
-                if (
-                    self._request.query.get("path") != None
-                    and len(self._request.query["path"]) == 1
-                ):
-                    # Recode the post command
-                    self.post_cmd = segments[0]
-                    return False
+            if (
+                self._request.query.get("path") != None
+                and len(self._request.query["path"]) == 1
+            ):
+                return False  # correct
 
         self.response_error(HTTPStatus.BAD_REQUEST)
         return True
 
-    def is_unauthorized(self,username=None,password=None):
+    def is_unauthorized(self, username=None, password=None):
         """
         Varify the authorization.
         """
+
         def set_unauthorized_response():
             self._response.set_status_line(HTTPStatus.UNAUTHORIZED)
             self._response.add_header("WWW-Authenticate", 'Basic realm="Test"')
             self._response.add_header("Content-type", "text\html")
+            self._response.add_header("Content-Length", 0)
             self._response.write_headers()
             self.close_connection = True
 
         if username != None and password != None:
-            auth = BasicAuth(username,password)
+            auth = BasicAuth(username, password)
             if auth and auth.valid:
                 self._request.auth = auth
                 self._response.add_header(
@@ -468,10 +444,10 @@ class HTTPRequestHandler:
             else:
                 return True
 
-
         cookie = CookieJar.from_cookie_header(self._request.get_header("Cookie"))
         if cookie and cookie.valid:
             self._request.cookie = cookie
+            self._request.auth = BasicAuth(cookie.username, None)  # set to None
             return False
 
         auth = BasicAuth.from_auth_header(self._request.get_header("authorization"))
@@ -487,16 +463,12 @@ class HTTPRequestHandler:
         set_unauthorized_response()
         return True
 
-
-
     def is_forbidden(self):
         """
         Check whether the path is forbidden.
+        """
 
-        Redirect if user visites the root.
-        """        
-
-        if self._request.cmd == "GET":
+        if self._request.cmd in ["GET", "HEAD"]:
             segments = [
                 seg
                 for seg in posixpath.normpath(
@@ -506,18 +478,13 @@ class HTTPRequestHandler:
                 ).split("/")
                 if seg
             ]
-            if len(segments) == 0:
-                # Visit the root directory of data, redirect.
-                # ! Comment only for script
-                self.redirect(
-                    utils.join_path_query(
-                        os.path.join(self._request.auth.username, ""),
-                        {ST: "0"},
-                    )
-                )
-                return True
 
-            if segments[0] == self._request.auth.username:
+            # visit the root directory of data is allowed.
+            if (
+                len(segments) == 0
+                or os.path.isfile(self.path2local(self._request.path))
+                or segments[0] == self._request.auth.username
+            ):
                 return False
 
         elif self._request.cmd == "POST":
@@ -534,11 +501,12 @@ class HTTPRequestHandler:
                 return False
 
         self.response_error(HTTPStatus.FORBIDDEN)
+
         return True
 
     def redirect(self, new_url, status=HTTPStatus.SEE_OTHER):
         """Redirect to new url."""
-        #让浏览器从response里面，得到下次发get请求、访问的url
+        # 让浏览器从response里面，得到下次发get请求、访问的url
         self._response.set_status_line(status)
         self._response.add_header("Location", new_url)
         self._response.add_header("Content-Length", "0")
@@ -563,7 +531,7 @@ class HTTPRequestHandler:
         list.sort(key=lambda a: a.lower())
         enc = sys.getfilesystemencoding()
 
-        if mode == "":
+        if mode == "1":
             display_list = []
             for name in list:
                 fullname = os.path.join(path, name)
@@ -572,9 +540,9 @@ class HTTPRequestHandler:
                     displayname = name + "/"
                 display_list.append(displayname)
 
-            encoded = str(display_list).encode(enc)
+            content = str(display_list)
 
-        elif mode == "1":
+        elif mode == "0":
             r = []
             displaypath = utils.html_escape(self._request.simple_path, quote=False)
             title = "Directory listing for %s" % displaypath
@@ -587,7 +555,8 @@ class HTTPRequestHandler:
             r.append("<title>%s</title>\n</head>" % title)
             # 添加样式
             r.append("<style>")
-            r.append("""
+            r.append(
+                """
                 html, body {
                     height: 100%;
                     margin: 0;
@@ -649,43 +618,12 @@ class HTTPRequestHandler:
                     background-color: #ddd;
                     height: 1px;
                 }
-            """)
+            """
+            )
             r.append("</style>")
-
-            # function handleDelete(filename) {
-            #         var form = document.createElement('form');
-            #         form.action = 'http://127.0.0.1:8080/delete?path=@#￥%…………&'+ filename;
-            #         form.method = 'post';
-            #
-            #         var input = document.createElement('input');
-            #         input.type = 'hidden';
-            #         input.name = 'filename';
-            #         input.value = filename;
-            #
-            #         form.appendChild(input);
-            #         document.body.appendChild(form);
-            #         form.submit();
-            #     }
-            #
-            # function handleUpload() {
-            #         var form = document.createElement('form');
-            #         form.action = 'http://127.0.0.1:8080/upload?path=@#￥%…………&';
-            #         form.method = 'post';
-            #         form.enctype = 'multipart/form-data';
-            #
-            #         var input = document.createElement('input');
-            #         input.type = 'file';
-            #         input.name = 'fileToUpload';
-            #         input.onchange = function() {
-            #             form.appendChild(input);
-            #             document.body.appendChild(form);
-            #             form.submit();
-            #         }
-            #         input.click();
-            #     }
-            # 添加脚本
             r.append("<script>")
-            r.append("""
+            r.append(
+                """
                 function handleDelete(filename) {
     fetch('http://127.0.0.1:8080/delete?path=@#￥%…………&' + filename, {
       method: 'POST',
@@ -728,7 +666,10 @@ class HTTPRequestHandler:
             });
         }
                 
-            """.replace("@#￥%…………&",displaypath))
+            """.replace(
+                    "@#￥%…………&", displaypath
+                )
+            )
             r.append("</script>")
             r.append("</head>")
 
@@ -736,10 +677,12 @@ class HTTPRequestHandler:
             r.append("<body>")
             r.append("<div class='header'>HTTP FILE MANAGER</div>")
             r.append("<div class='container'>")
-            r.append('<input type="file" id="fileInput" '+"/><button onclick='uploadFile()'>Upload File</button>")
+            r.append(
+                '<input type="file" id="fileInput" '
+                + "/><button onclick='uploadFile()'>Upload File</button>"
+            )
             r.append("<h1>%s</h1>" % title)
             r.append("<ul>")
-
 
             # add user root directory
             r.append(
@@ -782,19 +725,27 @@ class HTTPRequestHandler:
                 )
                 # print(displayname)
                 # 在每个列表项中添加删除按钮
-                r.append('<button onclick="handleDelete(\'%s\')">Delete</button>' % displayname)
+                r.append(
+                    "<button onclick=\"handleDelete('%s')\">Delete</button>"
+                    % displayname
+                )
             # 结束页面内容
             r.append("</ul>\n<hr>\n</body>\n</html>\n")
-            encoded = "\n".join(r).encode(enc)
-            # 创建和返回响应
-            f = io.BytesIO()
-            f.write(encoded)
-            f.seek(0)
-            self._response.set_status_line(HTTPStatus.OK)
-            self._response.add_header("Content-type", "text/html; charset=%s" % enc)
-            self._response.add_header("Content-Length", str(len(encoded)))
-            # self._response.write_headers()
-            return f
+            content = "\n".join(r)
+
+        # ! Pay attention to indent.
+        # 创建和返回响应
+        # encoded = (content + '\r\n').encode(enc)
+        encoded = (content).encode(enc)
+
+        f = io.BytesIO()
+        f.write(encoded)
+        f.seek(0)
+        self._response.set_status_line(HTTPStatus.OK)
+        self._response.add_header("Content-type", "text/html; charset=%s" % enc)
+        self._response.add_header("Content-Length", str(len(encoded)))
+        # self._response.write_headers()
+        return f
 
     def path2local(self, path):
         """
@@ -824,7 +775,7 @@ class HTTPRequestHandler:
 
     def response_error(self, status, msg=None):
         self._response.error(status, msg)
-        self.close_connection = True
+        # self.close_connection = True
 
     def finish(self):
         """ """

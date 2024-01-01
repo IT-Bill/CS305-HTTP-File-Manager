@@ -15,7 +15,13 @@ def _basic_auth_str(username, password):
 
 class BasicAuth:
     # TODO: User info. Try to move them to a config file.
-    _info = [("111", ""), ("222", ""), ("333", ""), ("client1", "123")]
+    # _info = [("111", ""), ("222", ""), ("333", ""), ("client1", "123")]
+    _info = {
+        "111": "",
+        "222": "",
+        "333": "",
+        "client1": "123"
+    }
 
     def __init__(self, username, password):
         self.username = username
@@ -41,7 +47,8 @@ class BasicAuth:
     
     @property
     def valid(self):
-        return (self.username, self.password) in BasicAuth._info
+        return BasicAuth._info.get(self.username) == self.password
+        # return (self.username, self.password) in BasicAuth._info
 
 
 

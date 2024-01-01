@@ -71,7 +71,7 @@ def parse_url(url):
     path = parts.path
     query = urllib.parse.parse_qs(parts.query)
     if query.get("SUSTech-HTTP") == None:
-        query["SUSTech-HTTP"] = ["0"]
+        query["SUSTech-HTTP"] = ["1"]
     return path, query
 
 
@@ -123,6 +123,44 @@ def html_escape(s, quote=True):
         s = s.replace('"', "&quot;")
         s = s.replace("'", "&#x27;")
     return s
+
+# ----------------- Process Multipart --------------------
+def parse_content_disposition(content_disposition):
+    parts = content_disposition.split(";")
+    disposition_type = parts[0].lower()
+    parameters = {}
+    for part in parts[1:]:
+        name, value = part.strip().split('=', 1)
+        parameters[name] = value.strip('"')
+    return disposition_type, parameters
+
+def get_boundary(content_type):
+    content_type, parameters = content_type.split(';')
+    param_dict = {}
+    for parameter in parameters.split(';'):
+        key, value = parameter.strip().split('=')
+        param_dict[key.lower().strip()] = value.strip('"')
+    return param_dict.get('boundary')
+
+def parse_multipart(data, boundary):
+    # Split the data into parts on the boundary
+    parts = data.split(('--' + boundary).encode())
+    # Skip the first part, as it's empty, and the last part, as it's the closing boundary
+    for part in parts[1:-1]:
+        # Split each part into headers and body
+        part = part.strip(b'\r\n')  # Strip any leading/trailing newlines
+        headers_raw, body = part.split(b'\r\n\r\n', 1)
+        headers = {}
+        for header in headers_raw.split(b'\r\n'):
+            # Check if the header actually contains a colon
+            if b':' in header:
+                key, value = header.decode().split(':', 1)
+                headers[key.strip().lower()] = value.strip()
+            else:
+                # Handle the case where no colon is present
+                # Perhaps log this case as it's likely to be a malformed header
+                print("Malformed header: No colon found in", header.decode())
+        yield headers, body.rstrip(b'\r\n')
 
 
 # ----------------------- Server -------------------------
