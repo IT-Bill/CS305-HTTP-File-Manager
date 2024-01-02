@@ -141,13 +141,18 @@ class HTTPRequestHandler:
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         self._response.remove_header("Content-Length")  # !!!!!!
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+        file_size = os.path.getsize(f.name)
+        # hot-fix
+        if range_header.endswith("-"):
+            range_header += str(file_size - 1)
+            
         ranges = [
             tuple(map(int, r.split("-")))
             for r in range_header[range_header.index("bytes=") + 6 :].split(
                 ","
             )
         ]
-        file_size = os.path.getsize(f.name)
         if all(0 <= start <= end < file_size for start, end in ranges):
             boundary = "3d6b6a416f9b5"
             self._response.add_header(
@@ -369,20 +374,20 @@ class HTTPRequestHandler:
         path = self.path2local(self._request.path)
         f = None
         if os.path.isdir(path):
-            parts = urllib.parse.urlsplit(self._request.path)
-            if not parts.path.endswith("/"):
+            # parts = urllib.parse.urlsplit(self._request.path)
+            # if not parts.path.endswith("/"):
                 # Example: Redirect `/dir` to `/dir/`
-                new_parts = (parts[0], parts[1], parts[2] + "/", parts[3], parts[4])
-                new_url = urllib.parse.urlunsplit(new_parts)
-                self.redirect(new_url, HTTPStatus.PERMANENT_REDIRECT)
-                return None
-            for index in "index.html", "index.htm":
-                index = os.path.join(path, index)
-                if os.path.exists(index):
-                    path = index
-                    break
-            else:
-                return self.list_directory(path)
+                # new_parts = (parts[0], parts[1], parts[2] + "/", parts[3], parts[4])
+                # new_url = urllib.parse.urlunsplit(new_parts)
+                # self.redirect(new_url, HTTPStatus.PERMANENT_REDIRECT)
+                # return None
+            # for index in "index.html", "index.htm":
+            #     index = os.path.join(path, index)
+            #     if os.path.exists(index):
+            #         path = index
+            #         break
+            # else:
+            return self.list_directory(path)
 
         # check whether client needs public key
         if self._request.path == "/get_public_key":

@@ -8,8 +8,8 @@ USER_INFO = {
     "222": "",
     "333": "",
     "client1": "123",
-    "client2": "",
-    "client3": "",
+    "client2": "123",
+    "client3": "123",
 }
 
 # If the server not receives any request during `CONNECTION_TIMEOUT` seconds from some threads
