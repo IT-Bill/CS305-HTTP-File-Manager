@@ -3,8 +3,6 @@ import threading
 import time
 from lib.server import HTTPRequestHandler, TCPServer
 
-    
-
 if __name__ == "__main__":
     try:
         http_server = TCPServer(("", 8080), HTTPRequestHandler)
@@ -14,7 +12,7 @@ if __name__ == "__main__":
 
         while True:
             time.sleep(1)
-    
+
     except KeyboardInterrupt:
         http_server.shutdown()
         print("Server close.")

@@ -357,8 +357,11 @@ class HTTPRequestHandler:
             self.response_error(HTTPStatus.BAD_REQUEST)
 
     def send_head(self):
+        # if self._request.path not in HTTPRequestHandler.NO_NEED_AUTH_PATH and (
+        #     self.is_unauthorized() or self.is_forbidden() or self.is_bad_request()
+        # ):
         if self._request.path not in HTTPRequestHandler.NO_NEED_AUTH_PATH and (
-            self.is_unauthorized() or self.is_forbidden() or self.is_bad_request()
+            self.is_unauthorized() or self.is_bad_request()
         ):
             return None
         elif self._request.path in ["/login.html", "/login"]:
@@ -376,11 +379,11 @@ class HTTPRequestHandler:
         if os.path.isdir(path):
             # parts = urllib.parse.urlsplit(self._request.path)
             # if not parts.path.endswith("/"):
-                # Example: Redirect `/dir` to `/dir/`
-                # new_parts = (parts[0], parts[1], parts[2] + "/", parts[3], parts[4])
-                # new_url = urllib.parse.urlunsplit(new_parts)
-                # self.redirect(new_url, HTTPStatus.PERMANENT_REDIRECT)
-                # return None
+            #     # Example: Redirect `/dir` to `/dir/`
+            #     new_parts = (parts[0], parts[1], parts[2] + "/", parts[3], parts[4])
+            #     new_url = urllib.parse.urlunsplit(new_parts)
+            #     self.redirect(new_url, HTTPStatus.PERMANENT_REDIRECT)
+            #     return None
             # for index in "index.html", "index.htm":
             #     index = os.path.join(path, index)
             #     if os.path.exists(index):
